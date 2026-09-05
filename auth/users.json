@@ -13,13 +13,14 @@
     },
     {
       "username": "10100",
-      "passwordHash": "KA8TQfLf7GHic5kuwnnFz4R1KX70AWfLS/9uTG+Amd4=",
-      "salt": "UvhFiNdIMhbHQnj29p68Uw==",
+      "passwordHash": "hShxeqdyFiluzYrSDhkQL6LzpGOxXFVZzy2vqCiNVlc=",
+      "salt": "NUW8+WmDJDKOGEfv1Oumxw==",
       "role": "member",
-      "mustChangePassword": true,
+      "mustChangePassword": false,
       "active": true,
       "createdAt": "2026-09-05T15:05:37.360Z",
-      "createdBy": "10108"
+      "createdBy": "10108",
+      "passwordChangedAt": "2026-09-05T15:06:22.110Z"
     }
   ]
 }
