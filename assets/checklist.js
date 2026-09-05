@@ -34,15 +34,17 @@
   let activeProject = null;
 
   const CONFIG = {
-    host: 'https://api.github.com',
-    owner: 'JahadGhasem98',
-    repo: 'RasadNegar',
-    branch: 'main',
     get directory() { return activeProject ? activeProject.directory : 'records/atlas-f70'; },
     brandName: 'رصدنگار',
     get activeProjectId() { return activeProjectId; },
-    webBase: 'https://github.com/JahadGhasem98/RasadNegar',
+    get webBase() { return window.AtlasStorage ? window.AtlasStorage.provider().webBase : ''; },
+    get branch() { return window.AtlasStorage ? window.AtlasStorage.provider().branch : 'main'; },
   };
+
+  function storage() {
+    if (!window.AtlasStorage) throw new Error('ماژول ذخیره‌سازی بارگذاری نشده است.');
+    return window.AtlasStorage;
+  }
   const $ = id => document.getElementById(id);
   const content = $('checklist-content');
   const fields = [...content.querySelectorAll('input[id], textarea[id], select[id]')];
@@ -120,51 +122,13 @@
   }
 
   function pathFor(serial) { return `${CONFIG.directory}/${serial}.md`; }
-  function repoBase() { return `/repos/${CONFIG.owner}/${CONFIG.repo}`; }
 
   async function api(path, options = {}) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 25000);
-    try {
-      const response = await fetch(`${CONFIG.host}${path}`, {
-        method: options.method || 'GET',
-        credentials: 'omit',
-        cache: 'no-store',
-        redirect: 'error',
-        signal: controller.signal,
-        headers: {
-          Accept: 'application/vnd.github+json',
-          'X-GitHub-Api-Version': '2022-11-28',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          ...(options.body ? { 'Content-Type': 'application/json' } : {}),
-        },
-        ...(options.body ? { body: JSON.stringify(options.body) } : {}),
-      });
-      if (!response.ok) throw new ApiError(response.status);
-      if (response.status === 204) return null;
-      const text = await response.text();
-      if (!text) return null;
-      return JSON.parse(text);
-    } catch (error) {
-      if (error instanceof ApiError) throw error;
-      throw new Error('پاسخ معتبر از گیت‌هاب دریافت نشد. اتصال شبکه و توکن را بررسی کنید.');
-    } finally {
-      clearTimeout(timeout);
-    }
+    return storage().api(path, { ...options, token });
   }
 
   function explain(error) {
-    if (!(error instanceof ApiError)) return error.message;
-    const messages = {
-      400: 'ثبت انجام نشد. ابتدا نسخهٔ Markdown را دانلود و دوباره تلاش کنید.',
-      401: 'توکن گیت‌هاب نامعتبر یا منقضی است.',
-      403: 'اجازهٔ Push ندارید یا محدودیت نرخ API فعال است. توکن باید دسترسی repo داشته باشد.',
-      404: 'مخزن یا مسیر پیدا نشد.',
-      409: 'فایل هم‌زمان تغییر کرده است. دوباره بارگذاری کنید.',
-      422: 'ثبت فایل ممکن نشد.',
-      429: 'تعداد درخواست‌ها زیاد است. کمی بعد دوباره تلاش کنید.',
-    };
-    return messages[error.status] || `گیت‌هاب خطای ${error.status} برگرداند.`;
+    return storage().explain(error);
   }
 
   async function withBusy(action) {
@@ -187,7 +151,7 @@
   function requireConnection() {
     if (token && projectId) return true;
     $('connection-panel').open = true;
-    $('github-token').focus();
+    $('service-token-sidebar')?.focus();
     message('ابتدا در بخش اتصال، توکن شخصی گیت‌هاب را وارد کنید. سپس دوباره ثبت یا بارگذاری را بزنید.', 'error');
     return false;
   }
@@ -197,8 +161,9 @@
       message('فقط مدیریت می‌تواند توکن سرویس را تغییر دهد.', 'error');
       return;
     }
-    const candidate = $('github-token').value.trim();
-    $('github-token').value = '';
+    const candidate = ($('service-token-sidebar') || $('service-token-sidebar'))?.value?.trim() || '';
+    if ($('service-token-sidebar')) $('service-token-sidebar').value = '';
+    if ($('service-token-sidebar')) $('service-token-sidebar').value = '';
     if (!candidate) { message('توکن دسترسی را وارد کنید.', 'error'); return; }
     await withBusy(async () => {
       ++catalogEpoch;
@@ -206,32 +171,21 @@
       renderCatalog();
       token = candidate;
       projectId = null;
-      message('در حال بررسی حساب و دسترسی به پروژه…');
-      try {
-        const user = await api('/user');
-        const repo = await api(repoBase());
-        projectId = repo.id;
-        sessionStorage.setItem('atlas_f70_service_token_v1', token);
-        if (window.AtlasAuth && typeof window.AtlasAuth.updateServiceTokenFromAdmin === 'function') {
-          try { await window.AtlasAuth.updateServiceTokenFromAdmin(token); } catch { /* session token still active */ }
-        }
-        $('connection-state').textContent = `متصل: ${user.name || user.username}`;
-        $('connection-panel').open = false;
-        message('توکن سرویس فعال شد. اعضا از همین توکن (بدون مشاهدهٔ آن) برای ثبت استفاده می‌کنند.', 'success');
-        refreshCatalog();
-      } catch (error) {
-        token = '';
-        projectId = null;
-        $('connection-state').textContent = 'اتصال برقرار نشد';
-        throw error;
-      }
+      storage().setToken(token);
+      message(`در حال بررسی دسترسی ${storage().provider().label}…`);
+      const info = await storage().ensureProject(token);
+      projectId = info.id;
+      sessionStorage.setItem('atlas_f70_service_token_v1', token);
+      $('connection-state').textContent = `متصل به ${storage().provider().label}`;
+      message(`اتصال به ${storage().provider().label} برقرار شد.`, 'success');
+      await refreshCatalog();
     });
   }
 
   function disconnect() {
     token = '';
     projectId = null;
-    $('github-token').value = '';
+    $('service-token-sidebar').value = '';
     $('connection-state').textContent = 'متصل نیست';
     $('connection-panel').open = true;
     message('اتصال قطع شد و توکن از حافظهٔ صفحه حذف شد. اطلاعات فرم همچنان در صفحه است.');
@@ -290,32 +244,18 @@
     $('catalog-status').textContent = 'در حال دریافت فایل‌ها…';
     $('catalog-status').dataset.kind = 'info';
     $('refresh-files').setAttribute('aria-busy', 'true');
-    const files = [];
     try {
-      if (!token) throw new ApiError(401);
-      let batch;
-      try {
-        batch = await api(`${repoBase()}/contents/${CONFIG.directory.split('/').map(encodeURIComponent).join('/')}?ref=${encodeURIComponent(CONFIG.branch)}`);
-      } catch (error) {
-        if (error instanceof ApiError && error.status === 404) batch = [];
-        else throw error;
-      }
-      if (epoch !== catalogEpoch) return;
-      if (!Array.isArray(batch)) batch = [];
-      for (const file of batch) {
-        if (file.type === 'file' && file.name.endsWith('.md')) {
-          files.push({ name: file.name, path: file.path, type: 'blob', sha: file.sha });
-        }
-      }
+      if (!token) { const err = new storage().ApiError(401); throw err; }
+      const files = await storage().listMarkdown(CONFIG.directory, token);
       if (epoch !== catalogEpoch) return;
       catalog = [...new Map(files.map(file => [file.name, file])).values()].sort((a, b) => a.name.localeCompare(b.name, 'fa', { numeric: true }));
       renderCatalog();
-      $('catalog-status').textContent = `به‌روز شد · ${new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' })}`;
+      $('catalog-status').textContent = `به‌روز شد · ${new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' })} · ${storage().provider().label}`;
     } catch (error) {
       if (epoch !== catalogEpoch) return;
       $('catalog-status').dataset.kind = 'error';
-      $('catalog-status').textContent = error instanceof ApiError && [401,403,404].includes(error.status)
-        ? 'برای مشاهدهٔ فایل‌ها توکن گیت‌هاب را تنظیم کنید.' : 'دریافت فهرست انجام نشد؛ دوباره تازه‌سازی کنید.';
+      $('catalog-status').textContent = error && error.status && [401,403,404].includes(error.status)
+        ? 'برای مشاهدهٔ فایل‌ها توکن سرویس را تنظیم کنید.' : 'دریافت فهرست انجام نشد؛ دوباره تازه‌سازی کنید.';
       if (!catalog.length) { $('file-empty').hidden = false; $('file-empty').textContent = 'فهرست فایل‌ها در دسترس نیست.'; }
     } finally {
       if (epoch === catalogEpoch) $('refresh-files').removeAttribute('aria-busy');
@@ -333,14 +273,11 @@
 
   async function getFile(serial) {
     try {
-      const file = await api(`${repoBase()}/contents/${pathFor(serial).split('/').map(encodeURIComponent).join('/')}?ref=${encodeURIComponent(CONFIG.branch)}`);
-      if (!file.sha || typeof file.content !== 'string') {
-        throw new Error('پاسخ فایل از گیت‌هاب کامل نیست؛ برای جلوگیری از بازنویسی، عملیات متوقف شد.');
-      }
-      const bytes = Uint8Array.from(atob(file.content.replace(/\s/g, '')), char => char.charCodeAt(0));
-      return { serial, sha: file.sha, markdown: new TextDecoder('utf-8', { fatal: false }).decode(bytes) };
+      const file = await storage().readFile(pathFor(serial), token);
+      if (!file) return null;
+      return { serial, sha: file.sha, markdown: file.text };
     } catch (error) {
-      if (error instanceof ApiError && error.status === 404) return null;
+      if (error && error.status === 404) return null;
       throw error;
     }
   }
@@ -380,7 +317,7 @@
       message('در حال خواندن فایل Markdown از گیت‌هاب…');
       const file = await getFile(serial);
       if (!file) {
-        await api(repoBase());
+        await storage().ensureProject(token);
         if (requestedSerial) {
           refreshCatalog();
           throw new Error('این فایل دیگر در پوشه موجود نیست. اطلاعات فعلی فرم حفظ شد.');
@@ -458,10 +395,9 @@
   }
 
   function showLinks(serial, sha) {
-    const base = CONFIG.webBase;
     const links = [
-      ['مشاهدهٔ فایل Markdown', `${base}/blob/${encodeURIComponent(CONFIG.branch)}/${pathFor(serial).split('/').map(encodeURIComponent).join('/')}`],
-      ['مشاهدهٔ Commit', `${base}/commit/${encodeURIComponent(sha)}`],
+      ['مشاهدهٔ فایل Markdown', storage().webFileUrl(pathFor(serial))],
+      ['مشاهدهٔ Commit', storage().webCommitUrl(sha)],
     ];
     $('saved-links').replaceChildren();
     for (const [title, href] of links) {
@@ -516,26 +452,14 @@
       }
 
       pendingWrite = { serial, markdown };
-      const encoded = btoa(unescape(encodeURIComponent(markdown)));
-      const body = {
-        message: `${remote ? 'Update' : 'Create'} ${(activeProject && activeProject.name) || 'project'} checklist: ${serial}`,
-        content: encoded,
-        branch: CONFIG.branch,
-      };
-      if (remote) body.sha = baseline.sha;
-      let commit;
-      try {
-        commit = await api(`${repoBase()}/contents/${pathFor(serial).split('/').map(encodeURIComponent).join('/')}`, {
-          method: 'PUT',
-          body,
-        });
-      } catch (error) {
-        if (!(error instanceof ApiError)) {
-          throw new Error('پاسخ ثبت دریافت نشد؛ ممکن است فایل در سرور ثبت شده باشد. دوباره «ثبت» را بزنید. اطلاعات فرم حفظ شده است.');
-        }
-        throw error;
-      }
-      const newSha = commit?.content?.sha || commit?.commit?.sha;
+      const result = await storage().writeFile(
+        pathFor(serial),
+        markdown,
+        `${remote ? 'Update' : 'Create'} ${(activeProject && activeProject.name) || 'project'} checklist: ${serial}`,
+        remote ? baseline.sha : null,
+        token
+      );
+      const newSha = result?.sha;
       if (!newSha) throw new Error('پاسخ ثبت کامل نیست. دوباره «ثبت» را بزنید تا وضعیت فایل بررسی شود.');
       saved(serial, newSha, markdown);
     });
@@ -594,7 +518,7 @@
       message('شماره‌سریال دستگاه جدید را وارد کنید.');
       $('search_sn').focus();
     });
-    $('github-token').addEventListener('keydown', event => {
+    $('service-token-sidebar')?.addEventListener('keydown', event => {
       if (event.key === 'Enter' && !busy) { event.preventDefault(); connect(); }
     });
     $('connectBtn').addEventListener('click', connect);
@@ -723,7 +647,7 @@
     if ($('active-project-label')) $('active-project-label').textContent = project.name;
     if ($('sidebar-footer-project')) $('sidebar-footer-project').textContent = project.name;
     const link = $('folder-path-link');
-    if (link) link.href = `${CONFIG.webBase}/tree/${CONFIG.branch}/${project.directory}`;
+    if (link) link.href = storage().webTreeUrl(project.directory);
     if ($('folder-path-label')) $('folder-path-label').textContent = project.directory.replaceAll('/', ' / ');
     const crumb = document.querySelector('#editor-heading .breadcrumb');
     if (crumb) crumb.innerHTML = `رصدنگار <span>/</span> پروژه‌ها <span>/</span> <bdi>${project.name}</bdi> <span>/</span> چک‌لیست دستگاه`;
@@ -775,23 +699,8 @@
   async function ensureProjectRepoFiles(project) {
     if (!token) return;
     try {
-      if (!projectId) {
-        const repoInfo = await api(repoBase());
-        projectId = repoInfo.id;
-      }
-      async function putNew(path, content, message) {
-        const encoded = btoa(unescape(encodeURIComponent(content)));
-        try {
-          await api(`${repoBase()}/contents/${path.split('/').map(encodeURIComponent).join('/')}`, {
-            method: 'PUT',
-            body: { message, content: encoded, branch: CONFIG.branch },
-          });
-        } catch (error) {
-          if (!(error instanceof ApiError) || ![422, 409].includes(error.status)) throw error;
-        }
-      }
-      await putNew(`${project.directory}/.gitkeep`, '', `feat(projects): init ${project.name} records`);
-      await putNew(`forms/${project.id}.html`, buildProjectFormHtml(project), `feat(projects): create ${project.name} form page`);
+      await storage().writeFile(`${project.directory}/.gitkeep`, '', `feat(projects): init ${project.name} records`, null, token);
+      await storage().writeFile(`forms/${project.id}.html`, buildProjectFormHtml(project), `feat(projects): create ${project.name} form page`, null, token);
     } catch (error) {
       console.warn('project repo files', error);
     }
@@ -892,9 +801,11 @@
     $('http-notice').hidden = !(location.protocol === 'http:' || CONFIG.host.startsWith('http:'));
     if (token) {
       try {
-        const repo = await api(repoBase());
-        projectId = repo.id;
-        $('connection-state').textContent = currentUser.role === 'admin' ? 'توکن سرویس فعال است' : 'متصل';
+        const info = await storage().ensureProject(token);
+        projectId = info.id;
+        $('connection-state').textContent = currentUser.role === 'admin'
+          ? `توکن ${storage().provider().label} فعال است`
+          : `متصل به ${storage().provider().label}`;
       } catch {
         $('connection-state').textContent = 'اتصال برقرار نشد';
       }
