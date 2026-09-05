@@ -31,7 +31,10 @@
   let busy = false;
 
   function explain(error) {
-    return storage().explain(error);
+    try {
+      if (window.AtlasStorage) return storage().explain(error);
+    } catch { /* ignore */ }
+    return (error && error.message) || String(error || 'خطای ناشناخته');
   }
 
   function isApiError(error) {
@@ -123,36 +126,40 @@
   }
 
   async function loadUsers() {
+    // Always start from local so login works offline / without working remote token.
+    const local = loadUsersLocal();
+    usersDoc = local;
+    usersSha = null;
+
     if (!serviceToken) {
-      usersDoc = loadUsersLocal();
-      usersSha = null;
       return usersDoc;
     }
+
     try {
       await ensureProjectId();
       const file = await readRepoFile(AUTH_CONFIG.usersPath);
       if (!file) {
-        const local = loadUsersLocal();
-        usersDoc = local.users.length ? local : emptyUsersDoc();
-        usersSha = null;
+        // Remote empty: keep local users (important after first setup before first sync)
         return usersDoc;
       }
       const parsed = JSON.parse(file.text);
       if (parsed.schemaVersion !== 1 || !Array.isArray(parsed.users)) {
-        throw new Error('فایل کاربران معتبر نیست.');
-      }
-      usersDoc = parsed;
-      usersSha = file.lastCommitId;
-      saveUsersLocal();
-      return usersDoc;
-    } catch (error) {
-      const local = loadUsersLocal();
-      if (local.users.length) {
-        usersDoc = local;
-        usersSha = null;
+        console.warn('remote users.json invalid; using local');
         return usersDoc;
       }
-      throw error;
+      // Prefer remote if it has users; otherwise keep local
+      if (parsed.users.length) {
+        usersDoc = parsed;
+        usersSha = file.lastCommitId;
+        saveUsersLocal();
+      }
+      return usersDoc;
+    } catch (error) {
+      // Remote failure must never block login
+      console.warn('loadUsers remote failed', error);
+      usersDoc = loadUsersLocal();
+      usersSha = null;
+      return usersDoc;
     }
   }
 
@@ -609,9 +616,10 @@
 
     if (!password) throw new Error('رمز عبور را وارد کنید.');
 
+    // Local-first auth so GitHub/GitLab outage never blocks login
     await loadUsers();
 
-    if (!usersDoc.users.length) {
+    if (!usersDoc || !Array.isArray(usersDoc.users) || !usersDoc.users.length) {
       showPanel('setup');
       showAuthMessage('هنوز ادمینی تعریف نشده است. ادمین اول را بسازید. توکن فعلاً لازم نیست.', 'info');
       return;
@@ -623,12 +631,14 @@
     const ok = await verifyPassword(password, user);
     if (!ok) throw new Error('نام کاربری یا رمز عبور نادرست است.');
 
+    // Optional remote token refresh; ignore failures
     if (serviceToken) {
       try {
         const repoToken = await loadServiceTokenFromRepo();
         if (repoToken) {
           serviceToken = repoToken;
           sessionStorage.setItem(AUTH_CONFIG.tokenKey, repoToken);
+          if (window.AtlasStorage) storage().setToken(repoToken);
         }
       } catch {
         /* keep current token */
@@ -636,7 +646,7 @@
     }
 
     persistSession(user);
-    $('login-password').value = '';
+    if ($('login-password')) $('login-password').value = '';
 
     if (user.mustChangePassword) {
       showPanel('change');
@@ -710,6 +720,7 @@
     try {
       await action();
     } catch (error) {
+      console.error(error);
       showAuthMessage(explain(error), 'error');
     } finally {
       setBusy(false);
@@ -769,9 +780,14 @@
 
     try {
       if (serviceToken) {
-        try { await requireServiceToken(serviceToken); } catch { /* keep local mode */ }
+        try { await requireServiceToken(serviceToken); } catch (e) { console.warn('token check', e); }
       }
-      await loadUsers();
+      try {
+        await loadUsers();
+      } catch (e) {
+        console.warn('boot loadUsers', e);
+        usersDoc = loadUsersLocal();
+      }
       updateSetupVisibility();
 
       if (!usersDoc.users.length) {
