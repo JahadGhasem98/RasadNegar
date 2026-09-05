@@ -14,41 +14,19 @@
   };
 
   function loadProjectsMap() {
-    let map = { ...DEFAULT_PROJECTS };
     try {
       const raw = localStorage.getItem(PROJECTS_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-          for (const [id, item] of Object.entries(parsed)) {
-            if (item && typeof item === 'object' && item.name) {
-              map[id] = {
-                id: item.id || id,
-                name: item.name,
-                titleFa: item.titleFa || `چک‌لیست پروژه ${item.name}`,
-                directory: item.directory || `records/${id}`,
-                markdownTitle: item.markdownTitle || `رصدنگار — چک‌لیست پروژه ${item.name}`,
-                formTemplate: item.formTemplate || 'f70',
-              };
-            }
-          }
-        }
-      }
-    } catch (error) {
-      console.warn('loadProjectsMap', error);
+      if (!raw) return { ...DEFAULT_PROJECTS };
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') return { ...DEFAULT_PROJECTS };
+      return { ...DEFAULT_PROJECTS, ...parsed };
+    } catch {
+      return { ...DEFAULT_PROJECTS };
     }
-    // Always keep default project
-    if (!map['atlas-f70']) map['atlas-f70'] = { ...DEFAULT_PROJECTS['atlas-f70'] };
-    return map;
   }
 
   function saveProjectsMap(map) {
-    const clean = {};
-    for (const [id, item] of Object.entries(map || {})) {
-      if (item && item.name) clean[id] = item;
-    }
-    if (!clean['atlas-f70']) clean['atlas-f70'] = { ...DEFAULT_PROJECTS['atlas-f70'] };
-    localStorage.setItem(PROJECTS_KEY, JSON.stringify(clean));
+    localStorage.setItem(PROJECTS_KEY, JSON.stringify(map));
   }
 
   let projectsMap = loadProjectsMap();
@@ -69,7 +47,7 @@
   }
   const $ = id => document.getElementById(id);
   const content = $('checklist-content');
-  const fields = content ? [...content.querySelectorAll('input[id], textarea[id], select[id]')] : [];
+  const fields = [...content.querySelectorAll('input[id], textarea[id], select[id]')];
   let token = '';
   let projectId = null;
   let busy = false;
@@ -145,10 +123,6 @@
 
   function pathFor(serial) { return `${CONFIG.directory}/${serial}.md`; }
 
-  async function api(path, options = {}) {
-    return storage().api(path, { ...options, token });
-  }
-
   function explain(error) {
     return storage().explain(error);
   }
@@ -172,9 +146,10 @@
 
   function requireConnection() {
     if (token && projectId) return true;
-    $('connection-panel').open = true;
+    if ($('connection-panel')) $('connection-panel').open = true;
     $('service-token-sidebar')?.focus();
-    message('ابتدا در بخش اتصال، توکن شخصی گیت‌هاب را وارد کنید. سپس دوباره ثبت یا بارگذاری را بزنید.', 'error');
+    const label = window.AtlasStorage ? storage().provider().label : 'مخزن';
+    message(`ابتدا توکن سرویس ${label} را از پنل مدیریت تنظیم کنید.`, 'error');
     return false;
   }
 
@@ -183,9 +158,9 @@
       message('فقط مدیریت می‌تواند توکن سرویس را تغییر دهد.', 'error');
       return;
     }
-    const candidate = ($('service-token-sidebar') || $('service-token-sidebar'))?.value?.trim() || '';
-    if ($('service-token-sidebar')) $('service-token-sidebar').value = '';
-    if ($('service-token-sidebar')) $('service-token-sidebar').value = '';
+    const input = $('service-token-sidebar');
+    const candidate = (input?.value || '').trim();
+    if (input) input.value = '';
     if (!candidate) { message('توکن دسترسی را وارد کنید.', 'error'); return; }
     await withBusy(async () => {
       ++catalogEpoch;
@@ -194,11 +169,15 @@
       token = candidate;
       projectId = null;
       storage().setToken(token);
+      sessionStorage.setItem('atlas_f70_service_token_v1', token);
       message(`در حال بررسی دسترسی ${storage().provider().label}…`);
       const info = await storage().ensureProject(token);
       projectId = info.id;
-      sessionStorage.setItem('atlas_f70_service_token_v1', token);
+      if (window.AtlasAuth && typeof window.AtlasAuth.updateServiceTokenFromAdmin === 'function') {
+        try { await window.AtlasAuth.updateServiceTokenFromAdmin(token, storage().getProviderId()); } catch { /* keep session token */ }
+      }
       $('connection-state').textContent = `متصل به ${storage().provider().label}`;
+      if ($('connection-panel')) $('connection-panel').open = false;
       message(`اتصال به ${storage().provider().label} برقرار شد.`, 'success');
       await refreshCatalog();
     });
@@ -263,24 +242,36 @@
 
   async function refreshCatalog() {
     const epoch = ++catalogEpoch;
-    $('catalog-status').textContent = 'در حال دریافت فایل‌ها…';
-    $('catalog-status').dataset.kind = 'info';
-    $('refresh-files').setAttribute('aria-busy', 'true');
+    if ($('catalog-status')) {
+      $('catalog-status').textContent = 'در حال دریافت فایل‌ها…';
+      $('catalog-status').dataset.kind = 'info';
+    }
+    $('refresh-files')?.setAttribute('aria-busy', 'true');
     try {
-      if (!token) { const err = new storage().ApiError(401); throw err; }
+      if (!token) throw Object.assign(new Error('no token'), { status: 401 });
       const files = await storage().listMarkdown(CONFIG.directory, token);
       if (epoch !== catalogEpoch) return;
-      catalog = [...new Map(files.map(file => [file.name, file])).values()].sort((a, b) => a.name.localeCompare(b.name, 'fa', { numeric: true }));
+      catalog = [...new Map(files.map(file => [file.name, file])).values()]
+        .sort((a, b) => a.name.localeCompare(b.name, 'fa', { numeric: true }));
       renderCatalog();
-      $('catalog-status').textContent = `به‌روز شد · ${new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' })} · ${storage().provider().label}`;
+      if ($('catalog-status')) {
+        $('catalog-status').textContent =
+          `به‌روز شد · ${new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' })} · ${storage().provider().label}`;
+      }
     } catch (error) {
       if (epoch !== catalogEpoch) return;
-      $('catalog-status').dataset.kind = 'error';
-      $('catalog-status').textContent = error && error.status && [401,403,404].includes(error.status)
-        ? 'برای مشاهدهٔ فایل‌ها توکن سرویس را تنظیم کنید.' : 'دریافت فهرست انجام نشد؛ دوباره تازه‌سازی کنید.';
-      if (!catalog.length) { $('file-empty').hidden = false; $('file-empty').textContent = 'فهرست فایل‌ها در دسترس نیست.'; }
+      if ($('catalog-status')) {
+        $('catalog-status').dataset.kind = 'error';
+        $('catalog-status').textContent = error && [401,403,404].includes(error.status)
+          ? 'برای مشاهدهٔ فایل‌ها توکن سرویس را تنظیم کنید.'
+          : 'دریافت فهرست انجام نشد؛ دوباره تازه‌سازی کنید.';
+      }
+      if (!catalog.length && $('file-empty')) {
+        $('file-empty').hidden = false;
+        $('file-empty').textContent = 'فهرست فایل‌ها در دسترس نیست.';
+      }
     } finally {
-      if (epoch === catalogEpoch) $('refresh-files').removeAttribute('aria-busy');
+      if (epoch === catalogEpoch) $('refresh-files')?.removeAttribute('aria-busy');
     }
   }
 
@@ -288,7 +279,7 @@
     if (busy) return;
     try {
       const serial = file.name.slice(0, -3);
-      if (normalizeSerial(serial) !== serial) throw new Error('نام این فایل با شماره‌سریال فرم سازگار نیست؛ آن را از پیوند پوشه در گیت‌هاب باز کنید.');
+      if (normalizeSerial(serial) !== serial) throw new Error('نام این فایل با شماره‌سریال فرم سازگار نیست؛ آن را از پیوند پوشه در مخزن باز کنید.');
       loadRecord(serial);
     } catch (error) { message(error.message, 'error'); }
   }
@@ -306,7 +297,7 @@
 
   function parseRecord(markdown, serial) {
     const match = markdown.match(/<!-- CHECKLIST_DATA_V1\s*\n([\s\S]*?)\nCHECKLIST_DATA_END -->/);
-    if (!match) throw new Error('فایل موجود، دادهٔ قابل بارگذاری این فرم را ندارد. فایل را در گیت‌هاب بررسی کنید؛ بازنویسی خودکار انجام نمی‌شود.');
+    if (!match) throw new Error('فایل موجود، دادهٔ قابل بارگذاری این فرم را ندارد. فایل را در مخزن بررسی کنید؛ بازنویسی خودکار انجام نمی‌شود.');
     let record;
     try { record = JSON.parse(match[1]); }
     catch { throw new Error('دادهٔ فرم در فایل معتبر نیست؛ فایل موجود بازنویسی نمی‌شود.'); }
@@ -336,7 +327,7 @@
     await withBusy(async () => {
       const serial = normalizeSerial(typeof requestedSerial === 'string' ? requestedSerial : $('search_sn').value);
       if (isDirty() && !window.confirm('بارگذاری، مقادیر فعلی فرم را جایگزین می‌کند. ادامه می‌دهید؟')) return;
-      message('در حال خواندن فایل Markdown از گیت‌هاب…');
+      message('در حال خواندن فایل Markdown از مخزن…');
       const file = await getFile(serial);
       if (!file) {
         await storage().ensureProject(token);
@@ -437,7 +428,7 @@
     pendingWrite = null;
     cleanData = JSON.stringify(readFields());
     badge(`سریال ${serial} در مخزن ثبت شد`);
-    message('فایل Markdown با موفقیت در گیت‌هاب ثبت شد.', 'success');
+    message('فایل Markdown با موفقیت در مخزن ثبت شد.', 'success');
     showLinks(serial, sha);
     selectedFile = `${serial}.md`;
     if (!catalog.some(file => file.name === selectedFile)) catalog.push({ name: selectedFile, path: pathFor(serial), type: 'blob' });
@@ -450,7 +441,7 @@
     await withBusy(async () => {
       const serial = serialValue();
       const markdown = makeMarkdown(serial);
-      message('در حال بررسی آخرین نسخه و ثبت فایل در گیت‌هاب…');
+      message('در حال بررسی آخرین نسخه و ثبت فایل در مخزن…');
       const remote = await getFile(serial);
 
       // A previous POST may have succeeded even if its response was lost. Reconcile before retrying.
@@ -497,7 +488,7 @@
       link.download = `${serial}.md`;
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
-      message('نسخهٔ Markdown برای دانلود آماده شد. دانلود به‌تنهایی چیزی در گیت‌هاب ثبت نمی‌کند.');
+      message('نسخهٔ Markdown برای دانلود آماده شد. دانلود به‌تنهایی چیزی در مخزن ثبت نمی‌کند.');
     } catch (error) { message(error.message, 'error'); }
   }
 
@@ -540,7 +531,7 @@
       message('شماره‌سریال دستگاه جدید را وارد کنید.');
       $('search_sn').focus();
     });
-    $('service-token-sidebar')?.addEventListener('keydown', event => {
+    $('service-token-sidebar').addEventListener('keydown', event => {
       if (event.key === 'Enter' && !busy) { event.preventDefault(); connect(); }
     });
     $('connectBtn').addEventListener('click', connect);
@@ -592,29 +583,14 @@
     const grid = $('project-grid');
     const empty = $('project-hub-empty');
     if (!grid) return;
-    projectsMap = loadProjectsMap();
     grid.replaceChildren();
-    const items = Object.values(projectsMap)
-      .filter(project => project && project.name)
-      .sort((a, b) => String(a.name).localeCompare(String(b.name), 'fa'));
-    if (empty) {
-      empty.hidden = items.length > 0;
-      empty.textContent = items.length ? '' : 'هنوز پروژه‌ای تعریف نشده است. از پنل مدیریت پروژه اضافه کنید.';
-    }
+    const items = Object.values(projectsMap).sort((a, b) => a.name.localeCompare(b.name, 'fa'));
+    if (empty) empty.hidden = items.length > 0;
     for (const project of items) {
       const card = document.createElement('button');
       card.type = 'button';
       card.className = 'project-card';
-      card.setAttribute('data-project-id', project.id);
-      const icon = document.createElement('span');
-      icon.className = 'project-card-icon';
-      icon.textContent = '📁';
-      const title = document.createElement('strong');
-      title.textContent = project.name;
-      const meta = document.createElement('small');
-      meta.dir = 'ltr';
-      meta.textContent = project.directory || `records/${project.id}`;
-      card.append(icon, title, meta);
+      card.innerHTML = `<span class="project-card-icon">📁</span><strong>${project.name}</strong><small dir="ltr">${project.directory}</small>`;
       card.addEventListener('click', () => openProject(project.id));
       grid.append(card);
     }
@@ -838,45 +814,27 @@
     $('http-notice').hidden = !(location.protocol === 'http:' || CONFIG.host.startsWith('http:'));
     if (token) {
       try {
-        const info = await storage().ensureProject(token);
-        projectId = info.id;
-        $('connection-state').textContent = currentUser.role === 'admin'
-          ? `توکن ${storage().provider().label} فعال است`
-          : `متصل به ${storage().provider().label}`;
+        const repo = await storage().ensureProject(token);
+        projectId = repo.id;
+        $('connection-state').textContent = currentUser.role === 'admin' ? 'توکن سرویس فعال است' : 'متصل';
       } catch {
         $('connection-state').textContent = 'اتصال برقرار نشد';
       }
     }
-    // Admin panel must appear even if remote user sync fails.
-    if (currentUser.role === 'admin' && $('admin-panel')) {
-      $('admin-panel').hidden = false;
+    if (window.AtlasAuth && typeof window.AtlasAuth.initAdminPanel === 'function') {
+      await window.AtlasAuth.initAdminPanel();
     }
-    try {
-      if (window.AtlasAuth && typeof window.AtlasAuth.initAdminPanel === 'function') {
-        await window.AtlasAuth.initAdminPanel();
-      }
-    } catch (error) {
-      console.warn('initAdminPanel', error);
-      if (currentUser.role === 'admin' && $('admin-panel')) $('admin-panel').hidden = false;
-      message(error.message || 'بارگذاری پنل مدیریت با خطا روبه‌رو شد.', 'error');
-    }
-
-    projectsMap = loadProjectsMap();
-    try { renderAdminProjects(); } catch (error) { console.warn(error); }
+    renderAdminProjects();
     showProjectHub();
-
     const requestedProject = new URLSearchParams(location.search).get('project');
     if (requestedProject && projectsMap[requestedProject]) {
-      try { openProject(requestedProject); } catch (error) { console.warn(error); }
+      openProject(requestedProject);
     }
-
-    if (window.ChecklistCalendar && content) {
+    if (window.ChecklistCalendar) {
       try {
         window.ChecklistCalendar.attach(content.querySelectorAll('.shamsi-date'));
-      } catch { if ($('calendar-notice')) $('calendar-notice').hidden = false; }
-    } else if ($('calendar-notice')) {
-      $('calendar-notice').hidden = false;
-    }
+      } catch { $('calendar-notice').hidden = false; }
+    } else $('calendar-notice').hidden = false;
   }
 
   document.addEventListener('atlas-auth-ready'
