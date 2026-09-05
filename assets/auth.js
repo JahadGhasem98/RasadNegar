@@ -3,10 +3,6 @@
   'use strict';
 
   const AUTH_CONFIG = Object.freeze({
-    host: 'https://api.github.com',
-    owner: 'JahadGhasem98',
-    repo: 'RasadNegar',
-    branch: 'main',
     usersPath: 'auth/users.json',
     servicePath: 'auth/service.json',
     sessionKey: 'atlas_f70_auth_session_v1',
@@ -14,6 +10,11 @@
     localUsersKey: 'atlas_f70_users_local_v1',
     pbkdf2Iterations: 120000,
   });
+
+  function storage() {
+    if (!window.AtlasStorage) throw new Error('ماژول ذخیره‌سازی بارگذاری نشده است.');
+    return window.AtlasStorage;
+  }
 
   const SPECIAL_CHARS = '!@#$%^&*_+';
   const SPECIAL_CHARS_HINT = '(!@#$%^&*_+...)';
@@ -29,12 +30,7 @@
   let serviceSha = null;
   let busy = false;
 
-  class ApiError extends Error {
-    constructor(status) {
-      super(`GitLab HTTP ${status}`);
-      this.status = status;
-    }
-  }
+  // ApiError provided by AtlasStorage
 
   function showAuthMessage(text, kind = 'info') {
     const el = $('auth-message');
@@ -90,50 +86,30 @@
     return username;
   }
 
-  async function api(path, options = {}) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 25000);
-    try {
-      const response = await fetch(`${AUTH_CONFIG.host}${path}`, {
-        method: options.method || 'GET',
-        credentials: 'omit',
-        cache: 'no-store',
-        redirect: 'error',
-        signal: controller.signal,
-        headers: {
-          Accept: 'application/vnd.github+json',
-          'X-GitHub-Api-Version': '2022-11-28',
-          ...(serviceToken ? { Authorization: `Bearer ${serviceToken}` } : {}),
-          ...(options.body ? { 'Content-Type': 'application/json' } : {}),
-        },
-        ...(options.body ? { body: JSON.stringify(options.body) } : {}),
-      });
-      if (!response.ok) throw new ApiError(response.status);
-      if (response.status === 204) return null;
-      return await response.json();
-    } catch (error) {
-      if (error instanceof ApiError) throw error;
-      throw new Error('پاسخ معتبر از گیت‌هاب دریافت نشد. اتصال شبکه و توکن را بررسی کنید.');
-    } finally {
-      clearTimeout(timeout);
-    }
-  }
-
   function explain(error) {
-    if (!(error instanceof ApiError)) return error.message;
-    const map = {
-      400: 'درخواست نامعتبر بود. دوباره تلاش کنید.',
-      401: 'توکن گیت‌هاب نامعتبر یا منقضی است.',
-      403: 'اجازهٔ دسترسی به مخزن وجود ندارد یا محدودیت نرخ API فعال است.',
-      404: 'مخزن یا فایل پیدا نشد.',
-      409: 'فایل هم‌زمان تغییر کرده است. صفحه را تازه کنید.',
-      422: 'امکان ثبت این تغییر وجود ندارد.',
-    };
-    return map[error.status] || `گیت‌هاب خطای ${error.status} برگرداند.`;
+    return storage().explain(error);
   }
 
-  function repoBase() {
-    return `/repos/${AUTH_CONFIG.owner}/${AUTH_CONFIG.repo}`;
+  function isApiError(error) {
+    return !!(error && typeof error.status === 'number' && /HTTP/.test(String(error.message || '')));
+  }
+
+  async function ensureProjectId() {
+    if (projectId) return projectId;
+    const info = await storage().ensureProject(serviceToken);
+    projectId = info.id;
+    return projectId;
+  }
+
+  async function readRepoFile(path) {
+    const file = await storage().readFile(path, serviceToken);
+    if (!file) return null;
+    return { text: file.text, lastCommitId: file.sha };
+  }
+
+  async function writeRepoFile(path, content, commitMessage, lastCommitId) {
+    const result = await storage().writeFile(path, content, commitMessage, lastCommitId, serviceToken);
+    return { text: content, lastCommitId: result.sha };
   }
 
   function bufferToBase64(buffer) {
@@ -182,48 +158,7 @@
     return result.hash === user.passwordHash;
   }
 
-  async function ensureProjectId() {
-    if (projectId) return projectId;
-    const repo = await api(repoBase());
-    projectId = repo.id;
-    return projectId;
-  }
-
-  async function readRepoFile(path) {
-    try {
-      const file = await api(
-        `${repoBase()}/contents/${path.split('/').map(encodeURIComponent).join('/')}?ref=${encodeURIComponent(AUTH_CONFIG.branch)}`
-      );
-      if (!file || typeof file.content !== 'string') return null;
-      const bytes = Uint8Array.from(atob(file.content.replace(/\s/g, '')), c => c.charCodeAt(0));
-      const text = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
-      return {
-        text,
-        lastCommitId: file.sha || null,
-      };
-    } catch (error) {
-      if (error instanceof ApiError && error.status === 404) return null;
-      throw error;
-    }
-  }
-
-  async function writeRepoFile(path, content, commitMessage, lastCommitId) {
-    await ensureProjectId();
-    const encoded = btoa(unescape(encodeURIComponent(content)));
-    const body = {
-      message: commitMessage,
-      content: encoded,
-      branch: AUTH_CONFIG.branch,
-    };
-    if (lastCommitId) body.sha = lastCommitId;
-    await api(`${repoBase()}/contents/${path.split('/').map(encodeURIComponent).join('/')}`, {
-      method: 'PUT',
-      body,
-    });
-    return readRepoFile(path);
-  }
-
-  function emptyUsersDoc() {
+    function emptyUsersDoc() {
     return { schemaVersion: 1, users: [] };
   }
 
@@ -359,13 +294,12 @@
 
   async function requireServiceToken(candidate) {
     const value = (candidate || serviceToken || '').trim();
-    if (!value) throw new Error('توکن سرویس گیت‌هاب را وارد کنید.');
+    if (!value) throw new Error('توکن سرویس را وارد کنید.');
     serviceToken = value;
+    storage().setToken(value);
     sessionStorage.setItem(AUTH_CONFIG.tokenKey, value);
     projectId = null;
     await ensureProjectId();
-    // Verify repo access with authenticated request
-    await api(repoBase());
     return value;
   }
 
@@ -497,15 +431,18 @@
     return true;
   }
 
-  async function updateServiceTokenFromAdmin(tokenValue) {
+  async function updateServiceTokenFromAdmin(tokenValue, providerId) {
     requireAdmin();
     const value = String(tokenValue || '').trim();
     if (!value) throw new Error('توکن سرویس را وارد کنید.');
+    if (providerId) storage().setProviderId(providerId);
     await requireServiceToken(value);
     await saveServiceToken(value);
-    // Sync local users to GitLab once token becomes available.
     await loadUsers();
     await saveUsers('chore(auth): sync users after service token set');
+    document.dispatchEvent(new CustomEvent('atlas-service-token-updated', {
+      detail: { token: value, provider: storage().getProviderId() },
+    }));
     return true;
   }
 
@@ -650,11 +587,12 @@
     $('admin-token-form')?.addEventListener('submit', event => {
       event.preventDefault();
       withAdminBusy(async () => {
+        const providerId = $('admin-service-provider')?.value || storage().getProviderId();
         const value = $('admin-service-token').value.trim();
-        await updateServiceTokenFromAdmin(value);
+        await updateServiceTokenFromAdmin(value, providerId);
         $('admin-service-token').value = '';
-        showAdminMessage('توکن سرویس ذخیره شد. اعضا بدون دیدن توکن از آن استفاده می‌کنند.', 'success');
-        document.dispatchEvent(new CustomEvent('atlas-service-token-updated', { detail: { token: serviceToken } }));
+        const label = storage().provider().label;
+        showAdminMessage(`سرویس ${label} و توکن ذخیره شد. اعضا بدون دیدن توکن از آن استفاده می‌کنند.`, 'success');
       });
     });
   }
@@ -666,9 +604,12 @@
     }
     if ($('admin-panel')) $('admin-panel').hidden = false;
     bindAdminPanel();
+    if ($('admin-service-provider')) $('admin-service-provider').value = storage().getProviderId();
+    if ($('service-provider')) $('service-provider').value = storage().getProviderId();
     await withAdminBusy(async () => {
       await refreshAdminPanel();
-      showAdminMessage('پنل مدیریت آماده است.', 'success');
+      const label = storage().provider().label;
+      showAdminMessage(`پنل مدیریت آماده است · سرویس فعال: ${label}`, 'success');
     });
   }
 
@@ -763,6 +704,8 @@
   }
 
   async function saveServiceTokenFromGate() {
+    const providerSelect = $('service-provider');
+    if (providerSelect) storage().setProviderId(providerSelect.value);
     const value = $('service-token-input').value.trim();
     if (!value) throw new Error('توکن سرویس را وارد کنید.');
     await requireServiceToken(value);
@@ -837,7 +780,9 @@
 
   async function boot() {
     session = readSession();
-    serviceToken = sessionStorage.getItem(AUTH_CONFIG.tokenKey) || '';
+    serviceToken = sessionStorage.getItem(AUTH_CONFIG.tokenKey) || storage().getToken() || '';
+    if ($('service-provider')) $('service-provider').value = storage().getProviderId();
+    if ($('admin-service-provider')) $('admin-service-provider').value = storage().getProviderId();
 
     $('auth-login-form').addEventListener('submit', event => {
       event.preventDefault();
