@@ -30,68 +30,12 @@
   let serviceSha = null;
   let busy = false;
 
-  // ApiError provided by AtlasStorage
-
-  function showAuthMessage(text, kind = 'info') {
-    const el = $('auth-message');
-    if (!el) return;
-    el.textContent = text || '';
-    el.dataset.kind = kind;
-    el.hidden = !text;
-  }
-
-  function showAdminMessage(text, kind = 'info') {
-    const el = $('admin-message');
-    if (!el) return;
-    el.textContent = text || '';
-    el.dataset.kind = kind;
-    el.hidden = !text;
-  }
-
-  function setBusy(state) {
-    busy = state;
-    document.querySelectorAll('#auth-gate button, #auth-gate input').forEach(el => {
-      el.disabled = state;
-    });
-  }
-
-  function setAdminBusy(state) {
-    busy = state;
-    document.querySelectorAll('#admin-panel button, #admin-panel input, #admin-panel select').forEach(el => {
-      el.disabled = state;
-    });
-  }
-
-  function validatePassword(password) {
-    if (typeof password !== 'string' || password.length < 8) {
-      return 'رمز عبور باید حداقل ۸ کاراکتر باشد.';
-    }
-    if (!/[a-z]/.test(password)) return 'رمز عبور باید حداقل یک حرف کوچک انگلیسی داشته باشد.';
-    if (!/[A-Z]/.test(password)) return 'رمز عبور باید حداقل یک حرف بزرگ انگلیسی داشته باشد.';
-    if (!/[0-9]/.test(password)) return 'رمز عبور باید حداقل یک عدد داشته باشد.';
-    if (![...SPECIAL_CHARS].some(ch => password.includes(ch))) {
-      return `رمز عبور باید حداقل یکی از نویسه‌های ویژه را داشته باشد: ${SPECIAL_CHARS_HINT}`;
-    }
-    return '';
-  }
-
-  function normalizeUsername(value) {
-    const username = String(value || '').trim();
-    if (username.length < 2 || username.length > 64) {
-      throw new Error('نام کاربری باید بین ۲ تا ۶۴ کاراکتر باشد.');
-    }
-    if (/[\u0000-\u001f\u007f\\/]/.test(username)) {
-      throw new Error('نام کاربری نمی‌تواند شامل نویسه‌های کنترلی یا / و \\ باشد.');
-    }
-    return username;
-  }
-
   function explain(error) {
     return storage().explain(error);
   }
 
   function isApiError(error) {
-    return !!(error && typeof error.status === 'number' && /HTTP/.test(String(error.message || '')));
+    return !!(error && typeof error.status === 'number');
   }
 
   async function ensureProjectId() {
@@ -158,7 +102,7 @@
     return result.hash === user.passwordHash;
   }
 
-    function emptyUsersDoc() {
+  function emptyUsersDoc() {
     return { schemaVersion: 1, users: [] };
   }
 
@@ -243,6 +187,7 @@
     serviceSha = fresh ? fresh.lastCommitId : null;
     serviceToken = token;
     sessionStorage.setItem(AUTH_CONFIG.tokenKey, token);
+    if (window.AtlasStorage) storage().setToken(token);
   }
 
   function persistSession(user) {
@@ -608,8 +553,7 @@
     if ($('service-provider')) $('service-provider').value = storage().getProviderId();
     await withAdminBusy(async () => {
       await refreshAdminPanel();
-      const label = storage().provider().label;
-      showAdminMessage(`پنل مدیریت آماده است · سرویس فعال: ${label}`, 'success');
+      showAdminMessage(`پنل مدیریت آماده است · سرویس فعال: ${storage().provider().label}`, 'success');
     });
   }
 
@@ -780,9 +724,9 @@
 
   async function boot() {
     session = readSession();
-    serviceToken = sessionStorage.getItem(AUTH_CONFIG.tokenKey) || storage().getToken() || '';
-    if ($('service-provider')) $('service-provider').value = storage().getProviderId();
-    if ($('admin-service-provider')) $('admin-service-provider').value = storage().getProviderId();
+    serviceToken = sessionStorage.getItem(AUTH_CONFIG.tokenKey) || (window.AtlasStorage && window.AtlasStorage.getToken()) || '';
+    if ($('service-provider') && window.AtlasStorage) $('service-provider').value = storage().getProviderId();
+    if ($('admin-service-provider') && window.AtlasStorage) $('admin-service-provider').value = storage().getProviderId();
 
     $('auth-login-form').addEventListener('submit', event => {
       event.preventDefault();
