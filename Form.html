@@ -1,3 +1,4 @@
+<!-- Form.html -->
 <!DOCTYPE html>
 <html lang="fa" dir="rtl">
 <head>
@@ -37,17 +38,11 @@
     </section>
 
     <section id="auth-service-panel" class="auth-panel" hidden>
-      <h1>توکن سرویس ذخیره‌سازی</h1>
-      <p class="auth-help">مدیر سرویس را انتخاب می‌کند: GitHub یا GitLab. سپس توکن همان سرویس را وارد کنید. همهٔ اعضا از همین تنظیم استفاده می‌کنند.</p>
+      <h1>توکن سرویس</h1>
+      <p class="auth-help">این بخش فقط برای مدیریت است. توکن با دسترسی مناسب (api برای GitLab یا repo برای GitHub) را وارد کنید تا ورود کاربران و ثبت چک‌لیست در این مرورگر ممکن شود.</p>
       <form id="auth-service-form" autocomplete="off">
-        <label for="service-provider">سرویس ذخیره‌سازی</label>
-        <select id="service-provider">
-          <option value="github">GitHub — JahadGhasem98/RasadNegar</option>
-          <option value="gitlab">GitLab — fb_git_amirmahdi/checklist</option>
-        </select>
         <label for="service-token-input">توکن سرویس</label>
         <input id="service-token-input" type="password" dir="ltr" autocomplete="off" spellcheck="false" required>
-        <p class="auth-hint" id="service-token-hint">GitHub: دسترسی repo · GitLab: دسترسی api</p>
         <button type="submit" class="btn-submit auth-submit">ذخیره و بازگشت به ورود</button>
       </form>
       <button type="button" id="auth-service-back" class="auth-link-btn">بازگشت به ورود</button>
@@ -63,7 +58,7 @@
         <input id="setup-password" type="password" dir="ltr" autocomplete="new-password" required>
         <label for="setup-password-confirm">تکرار رمز عبور</label>
         <input id="setup-password-confirm" type="password" dir="ltr" autocomplete="new-password" required>
-        <label for="setup-token">توکن سرویس (اختیاری — GitHub یا GitLab)</label>
+        <label for="setup-token">توکن سرویس (اختیاری)</label>
         <input id="setup-token" type="password" dir="ltr" autocomplete="off" spellcheck="false">
         <p class="auth-hint">رمز باید شامل حرف بزرگ، حرف کوچک، عدد و یکی از نویسه‌های ویژه <bdi dir="ltr">(!@#$%^&amp;*_+...)</bdi> باشد.</p>
         <button type="submit" class="btn-submit auth-submit">ساخت اکانت</button>
@@ -110,7 +105,7 @@
   </div>
   <section class="file-panel" id="sidebar-files" hidden>
     <div class="panel-heading"><div><span class="eyebrow">آرشیو مستندات</span><h2>چک‌لیست‌های ثبت‌شده</h2></div><span id="file-count" class="count-badge">۰</span></div>
-    <a class="folder-path" id="folder-path-link" href="https://github.com/JahadGhasem98/RasadNegar/-/tree/main/records/atlas-f70" target="_blank" rel="noopener noreferrer" title="بازکردن پوشه در گیت‌هاب"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/></svg><span dir="ltr" id="folder-path-label">records / atlas-f70</span><span class="branch-label">main</span></a>
+    <a class="folder-path" id="folder-path-link" href="http://gitlab.faraabin.ir/fb_git_amirmahdi/checklist/-/tree/main/records/atlas-f70" target="_blank" rel="noopener noreferrer" title="بازکردن پوشه در گیت‌لب"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/></svg><span dir="ltr" id="folder-path-label">records / atlas-f70</span><span class="branch-label">main</span></a>
     <label class="file-search-label" for="file-search">جست‌وجوی فایل</label>
     <div class="file-search-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="10" cy="10" r="6"/><path d="m15 15 5 5"/></svg><input id="file-search" type="search" placeholder="شماره‌سریال یا نام فایل…" autocomplete="off"></div>
     <div class="catalog-toolbar"><span id="catalog-status" role="status">در حال دریافت فایل‌ها…</span><button type="button" id="refresh-files" title="تازه‌سازی فهرست" aria-label="تازه‌سازی فهرست">↻</button></div>
@@ -120,18 +115,18 @@
   </section>
   <button type="button" id="new-record" class="new-record" hidden><span aria-hidden="true">＋</span> چک‌لیست جدید</button>
   <details id="connection-panel" class="connection-panel" hidden>
-    <summary>وضعیت اتصال مخزن <span id="connection-state">متصل نیست</span></summary>
+    <summary>وضعیت اتصال <span id="connection-state">متصل نیست</span></summary>
     <p>مقصد ثبت: <bdi dir="ltr">fb_git_amirmahdi/checklist → main → records/atlas-f70</bdi></p>
     <p>مدیریت و تغییر توکن سرویس فقط از <b>پنل مدیریت</b> انجام می‌شود.</p>
     <div class="connection-actions" hidden>
-      <label for="service-token-sidebar">توکن سرویس (فقط مدیریت)</label>
-      <input type="password" id="service-token-sidebar" autocomplete="off" spellcheck="false" dir="ltr" aria-describedby="token-help">
+      <label for="gitlab-token">توکن سرویس (فقط مدیریت)</label>
+      <input type="password" id="gitlab-token" autocomplete="off" spellcheck="false" dir="ltr" aria-describedby="token-help">
       <button type="button" id="connectBtn" class="btn-search">اتصال</button>
       <button type="button" id="disconnectBtn" class="btn-secondary">قطع اتصال</button>
-      <a href="https://github.com/settings/tokens" target="_blank" rel="noopener noreferrer">ساخت توکن</a>
+      <a href="http://gitlab.faraabin.ir/-/user_settings/personal_access_tokens" target="_blank" rel="noopener noreferrer">ساخت توکن در گیت‌لب</a>
     </div>
     <p id="token-help">توکن سرویس فقط در پنل مدیریت قابل تنظیم است.</p>
-    <p id="http-notice" class="connection-warning" hidden>ارتباط فعلی HTTP است و توکن در مسیر شبکه رمزگذاری نمی‌شود. برای استفادهٔ امن، GitHub و Pages را با HTTPS راه‌اندازی کنید.</p>
+    <p id="http-notice" class="connection-warning" hidden>ارتباط فعلی HTTP است و توکن در مسیر شبکه رمزگذاری نمی‌شود. برای استفادهٔ امن، GitLab و Pages را با HTTPS راه‌اندازی کنید.</p>
   </details>
   <div class="sidebar-footer"><span class="system-dot"></span> رصدنگار · <span id="sidebar-footer-project">انتخاب پروژه</span></div>
 </aside>
@@ -164,18 +159,25 @@
       </form>
 
       <form id="admin-token-form" class="admin-card" autocomplete="off">
-        <h3>توکن سرویس ذخیره‌سازی</h3>
-        <p class="auth-help">بین GitHub و GitLab جابه‌جا شوید. توکن برای ثبت چک‌لیست همهٔ اعضا استفاده می‌شود و به اعضا نشان داده نمی‌شود.</p>
-        <label for="admin-service-provider">سرویس فعال</label>
-        <select id="admin-service-provider">
-          <option value="github">GitHub — JahadGhasem98/RasadNegar</option>
-          <option value="gitlab">GitLab — fb_git_amirmahdi/checklist</option>
-        </select>
-        <label for="admin-service-token">توکن سرویس</label>
+        <h3>توکن سرویس</h3>
+        <p class="auth-help">این توکن برای ثبت چک‌لیست همهٔ اعضا استفاده می‌شود و در رابط اعضا نمایش داده نمی‌شود. دسترسی موردنیاز: <bdi dir="ltr">api</bdi> برای GitLab یا <bdi dir="ltr">repo</bdi> برای GitHub.</p>
+        <label for="admin-service-token">توکن جدید</label>
         <input id="admin-service-token" type="password" dir="ltr" spellcheck="false" required>
-        <p class="auth-hint" id="admin-token-hint">GitHub: repo · GitLab: api</p>
-        <button type="submit" class="btn-search">ذخیره سرویس و توکن</button>
+        <button type="submit" class="btn-search">ذخیره توکن سرویس</button>
       </form>
+    </div>
+
+    <div class="admin-grid">
+      <div class="admin-card">
+        <h3>سرویس ذخیره‌سازی</h3>
+        <p class="auth-help">انتخاب کنید که فرم و فایل‌های کاربران در کدام سرویس ذخیره شوند. پس از تغییر، توکن سرویس و کاربران همان سرویس بارگذاری می‌شوند.</p>
+        <label for="admin-provider">سرویس فعال</label>
+        <select id="admin-provider">
+          <option value="github">GitHub</option>
+          <option value="gitlab">GitLab</option>
+        </select>
+        <button type="button" id="admin-provider-save" class="btn-search">ذخیره و اعمال سرویس</button>
+      </div>
     </div>
 
     <div class="admin-card admin-users-card">
