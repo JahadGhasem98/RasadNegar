@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>رصدنگار — چک‌لیست تولید و ردیابی محصول</title>
+  
+
+  <link rel="stylesheet" href="assets/workspace.css">
+</head>
+<body>
+
+<div id="auth-gate" class="auth-gate">
+  <div class="auth-card">
+    <div class="auth-brand">
+      <img class="brand-logo" src="assets/brand/rasad-negar-logo.png" alt="لوگوی رصدنگار" width="64" height="64">
+      <div>
+        <strong>رصدنگار</strong>
+        <small>شناسه و ردیابی محصول · Product ID &amp; Tracking</small>
+      </div>
+      <button type="button" id="theme-toggle-auth" class="theme-toggle" title="تغییر تم روز/شب" aria-label="تغییر تم روز/شب">🌙</button>
+    </div>
+    <p id="auth-message" class="auth-message" hidden></p>
+
+    <section id="auth-login-panel" class="auth-panel">
+      <h1>ورود به سامانه</h1>
+      <p class="auth-help">فقط نام کاربری و رمز عبور را وارد کنید. مدیریت توکن سرویس فقط از پنل مدیریت انجام می‌شود.</p>
+      <form id="auth-login-form" autocomplete="on">
+        <label for="login-username">نام کاربری</label>
+        <input id="login-username" name="username" type="text" dir="ltr" autocomplete="username" required>
+        <label for="login-password">رمز عبور</label>
+        <input id="login-password" name="password" type="password" dir="ltr" autocomplete="current-password" required>
+        <button type="submit" class="btn-submit auth-submit">ورود</button>
+      </form>
+      <button type="button" id="auth-goto-setup" class="auth-link-btn">ساخت اکانت</button>
+      <button type="button" id="auth-goto-service" class="auth-link-btn">تنظیم توکن سرویس (مدیریت)</button>
+    </section>
+
+    <section id="auth-service-panel" class="auth-panel" hidden>
+      <h1>توکن سرویس گیت‌هاب</h1>
+      <p class="auth-help">این بخش فقط برای مدیریت است. توکن با دسترسی api را وارد کنید تا ورود کاربران و ثبت چک‌لیست در این مرورگر ممکن شود. پس از ورود، تغییر توکن از پنل مدیریت انجام می‌شود.</p>
+      <form id="auth-service-form" autocomplete="off">
+        <label for="service-token-input">توکن سرویس (api)</label>
+        <input id="service-token-input" type="password" dir="ltr" autocomplete="off" spellcheck="false" required>
+        <button type="submit" class="btn-submit auth-submit">ذخیره و بازگشت به ورود</button>
+      </form>
+      <button type="button" id="auth-service-back" class="auth-link-btn">بازگشت به ورود</button>
+    </section>
+
+    <section id="auth-setup-panel" class="auth-panel" hidden>
+      <h1>ساخت اکانت</h1>
+      <p class="auth-help">اولین حساب سامانه را بسازید. این حساب نقش مدیر دارد. بعد از ساخت، کاربران دیگر فقط از پنل مدیریت اضافه می‌شوند.</p>
+      <form id="auth-setup-form" autocomplete="off">
+        <label for="setup-username">نام کاربری</label>
+        <input id="setup-username" type="text" dir="ltr" autocomplete="off" required>
+        <label for="setup-password">رمز عبور</label>
+        <input id="setup-password" type="password" dir="ltr" autocomplete="new-password" required>
+        <label for="setup-password-confirm">تکرار رمز عبور</label>
+        <input id="setup-password-confirm" type="password" dir="ltr" autocomplete="new-password" required>
+        <label for="setup-token">توکن سرویس گیت‌هاب (اختیاری)</label>
+        <input id="setup-token" type="password" dir="ltr" autocomplete="off" spellcheck="false">
+        <p class="auth-hint">رمز باید شامل حرف بزرگ، حرف کوچک، عدد و یکی از نویسه‌های ویژه <bdi dir="ltr">(!@#$%^&amp;*_+...)</bdi> باشد.</p>
+        <button type="submit" class="btn-submit auth-submit">ساخت اکانت</button>
+      </form>
+      <button type="button" id="auth-goto-login" class="auth-link-btn">بازگشت به ورود</button>
+    </section>
+
+    <section id="auth-change-panel" class="auth-panel" hidden>
+      <h1>تغییر رمز عبور</h1>
+      <p class="auth-help">رمز جدید خود را وارد کنید.</p>
+      <form id="auth-change-form" autocomplete="off">
+        <label for="change-new-password">رمز جدید</label>
+        <input id="change-new-password" type="password" dir="ltr" autocomplete="new-password" required>
+        <label for="change-password-confirm">تکرار رمز جدید</label>
+        <input id="change-password-confirm" type="password" dir="ltr" autocomplete="new-password" required>
+        <p class="auth-hint">رمز باید شامل حرف بزرگ، حرف کوچک، عدد و یکی از نویسه‌های ویژه <bdi dir="ltr">(!@#$%^&amp;*_+...)</bdi> باشد.</p>
+        <button type="submit" class="btn-submit auth-submit">ذخیره رمز جدید</button>
+      </form>
+      <button type="button" id="auth-change-cancel" class="auth-link-btn" hidden>انصراف</button>
+    </section>
+  </div>
+</div>
+
+<div id="app-shell" class="app-shell" hidden>
+<aside class="workspace-sidebar" aria-label="فایل‌های ذخیره‌شده">
+  <div class="brand-row">
+    <a class="brand" href="Form.html">
+      <img class="brand-logo" src="assets/brand/rasad-negar-logo.png" alt="لوگوی رصدنگار" width="44" height="44">
+      <span><strong>رصدنگار</strong><small>شناسه و ردیابی محصول</small></span>
+    </a>
+    <button type="button" id="theme-toggle-app" class="theme-toggle" title="تغییر تم روز/شب" aria-label="تغییر تم روز/شب">🌙</button>
+  </div>
+  <div class="project-chip" id="active-project-chip" title="پروژه فعال" hidden>
+    <span class="eyebrow">پروژه فعال</span>
+    <strong id="active-project-label">—</strong>
+    <button type="button" id="back-to-projects" class="btn-secondary project-back-btn">بازگشت به پروژه‌ها</button>
+  </div>
+  <div class="session-bar">
+    <span id="session-user-label">—</span>
+    <div class="session-actions">
+      <button type="button" id="changePasswordBtn" class="btn-secondary session-logout">تغییر رمز</button>
+      <button type="button" id="logoutBtn" class="btn-secondary session-logout">خروج</button>
+    </div>
+  </div>
+  <section class="file-panel" id="sidebar-files" hidden>
+    <div class="panel-heading"><div><span class="eyebrow">آرشیو مستندات</span><h2>چک‌لیست‌های ثبت‌شده</h2></div><span id="file-count" class="count-badge">۰</span></div>
+    <a class="folder-path" id="folder-path-link" href="https://github.com/JahadGhasem98/RasadNegar/-/tree/main/records/atlas-f70" target="_blank" rel="noopener noreferrer" title="بازکردن پوشه در گیت‌هاب"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 7V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/></svg><span dir="ltr" id="folder-path-label">records / atlas-f70</span><span class="branch-label">main</span></a>
+    <label class="file-search-label" for="file-search">جست‌وجوی فایل</label>
+    <div class="file-search-wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><circle cx="10" cy="10" r="6"/><path d="m15 15 5 5"/></svg><input id="file-search" type="search" placeholder="شماره‌سریال یا نام فایل…" autocomplete="off"></div>
+    <div class="catalog-toolbar"><span id="catalog-status" role="status">در حال دریافت فایل‌ها…</span><button type="button" id="refresh-files" title="تازه‌سازی فهرست" aria-label="تازه‌سازی فهرست">↻</button></div>
+    <ul id="file-list" class="file-list" aria-label="فایل‌های Markdown"></ul>
+    <div id="file-empty" class="file-empty" hidden>هنوز چک‌لیستی ثبت نشده است.</div>
+    <p class="file-hint">برای نمایش در فرم، روی فایل دوبارکلیک کنید.</p>
+  </section>
+  <button type="button" id="new-record" class="new-record" hidden><span aria-hidden="true">＋</span> چک‌لیست جدید</button>
+  <details id="connection-panel" class="connection-panel" hidden>
+    <summary>وضعیت اتصال گیت‌هاب <span id="connection-state">متصل نیست</span></summary>
+    <p>مقصد ثبت: <bdi dir="ltr">fb_git_amirmahdi/checklist → main → records/atlas-f70</bdi></p>
+    <p>مدیریت و تغییر توکن سرویس فقط از <b>پنل مدیریت</b> انجام می‌شود.</p>
+    <div class="connection-actions" hidden>
+      <label for="github-token">توکن سرویس (فقط مدیریت)</label>
+      <input type="password" id="github-token" autocomplete="off" spellcheck="false" dir="ltr" aria-describedby="token-help">
+      <button type="button" id="connectBtn" class="btn-search">اتصال</button>
+      <button type="button" id="disconnectBtn" class="btn-secondary">قطع اتصال</button>
+      <a href="https://github.com/settings/tokens" target="_blank" rel="noopener noreferrer">ساخت توکن در گیت‌هاب</a>
+    </div>
+    <p id="token-help">توکن سرویس فقط در پنل مدیریت قابل تنظیم است.</p>
+    <p id="http-notice" class="connection-warning" hidden>ارتباط فعلی HTTP است و توکن در مسیر شبکه رمزگذاری نمی‌شود. برای استفادهٔ امن، GitHub و Pages را با HTTPS راه‌اندازی کنید.</p>
+  </details>
+  <div class="sidebar-footer"><span class="system-dot"></span> رصدنگار · <span id="sidebar-footer-project">انتخاب پروژه</span></div>
+</aside>
+<main class="container">
+
+  <section id="admin-panel" class="admin-panel" hidden>
+    <div class="admin-header">
+      <div>
+        <span class="eyebrow">پنل مدیریت</span>
+        <h2>مدیریت کاربران و توکن سرویس</h2>
+      </div>
+      <span id="admin-user-count" class="count-badge">۰</span>
+    </div>
+    <p id="admin-message" class="auth-message" hidden></p>
+
+    <div class="admin-grid">
+      <form id="admin-create-form" class="admin-card" autocomplete="off">
+        <h3>ایجاد کاربر جدید</h3>
+        <label for="admin-new-username">نام کاربری</label>
+        <input id="admin-new-username" type="text" dir="ltr" required>
+        <label for="admin-new-password">رمز اولیه</label>
+        <input id="admin-new-password" type="password" dir="ltr" value="12345@Qaz" placeholder="12345@Qaz">
+        <label for="admin-new-role">نقش</label>
+        <select id="admin-new-role">
+          <option value="member">عضو</option>
+          <option value="admin">مدیر</option>
+        </select>
+        <p class="auth-hint">اگر رمز را خالی بگذارید، رمز پیش‌فرض <bdi dir="ltr">12345@Qaz</bdi> است و کاربر در اولین ورود باید آن را تغییر دهد. رمز باید حرف بزرگ/کوچک، عدد و یکی از <bdi dir="ltr">(!@#$%^&amp;*_+...)</bdi> داشته باشد.</p>
+        <button type="submit" class="btn-submit">ایجاد کاربر</button>
+      </form>
+
+      <form id="admin-token-form" class="admin-card" autocomplete="off">
+        <h3>توکن سرویس گیت‌هاب</h3>
+        <p class="auth-help">این توکن برای ثبت چک‌لیست همهٔ اعضا استفاده می‌شود و در رابط اعضا نمایش داده نمی‌شود.</p>
+        <label for="admin-service-token">توکن جدید (api)</label>
+        <input id="admin-service-token" type="password" dir="ltr" spellcheck="false" required>
+        <button type="submit" class="btn-search">ذخیره توکن سرویس</button>
+      </form>
+    </div>
+
+    <div class="admin-card admin-users-card">
+      <div class="admin-users-toolbar">
+        <h3>کاربران</h3>
+        <div class="admin-users-tools">
+          <input id="admin-user-search" type="search" placeholder="جست‌وجوی نام کاربری…" dir="ltr">
+          <button type="button" id="admin-refresh-users" class="btn-secondary">تازه‌سازی</button>
+        </div>
+      </div>
+      <div id="admin-user-list" class="admin-user-list"></div>
+      <div id="admin-user-empty" class="file-empty" hidden>کاربری ثبت نشده است.</div>
+    </div>
+
+    <div class="admin-card" style="margin-top:16px;">
+      <h3>پروژه‌ها</h3>
+      <form id="admin-project-form" autocomplete="off">
+        <label for="admin-project-name">نام پروژه</label>
+        <input id="admin-project-name" type="text" required placeholder="مثلاً Atlas F80">
+        <label for="admin-project-id">شناسه پوشه (انگلیسی - اختیاری)</label>
+        <input id="admin-project-id" type="text" dir="ltr" placeholder="اگر خالی باشد از نام ساخته می‌شود">
+        <p class="auth-hint">اگر شناسه خالی باشد خودکار ساخته می‌شود. مسیر ذخیره: records/شناسه</p>
+        <button type="submit" class="btn-submit">افزودن پروژه</button>
+      </form>
+      <div id="admin-project-list" class="admin-user-list" style="margin-top:12px;"></div>
+    </div>
+  </section>
+
+  <section id="project-hub" class="project-hub">
+    <div class="header-title">
+      <div class="breadcrumb">رصدنگار <span>/</span> پروژه‌ها</div>
+      <div class="title-row">
+        <div>
+          <h1>انتخاب پروژه</h1>
+          <span class="page-subtitle">یک پروژه را انتخاب کنید تا چک‌لیست آن باز شود</span>
+        </div>
+      </div>
+    </div>
+    <div id="project-grid" class="project-grid"></div>
+    <div id="project-hub-empty" class="file-empty" hidden>هنوز پروژه‌ای تعریف نشده است.</div>
+  </section>
+
+  <section id="checklist-workspace" hidden>
+  <div class="header-title" id="editor-heading">
+    <div class="breadcrumb">رصدنگار <span>/</span> پروژه‌ها <span>/</span> <bdi>Atlas F70</bdi> <span>/</span> چک‌لیست دستگاه</div>
+    <div class="title-row"><div><h1>چک‌لیست پروژه <bdi>Atlas F70</bdi></h1>
+    <span class="page-subtitle">ثبت مراحل مونتاژ، تولید و کالیبراسیون · یکی از محصولات رصدنگار</span></div><div class="progress-card"><span>پیشرفت تأیید مراحل</span><strong id="progress-value">۰ مرحله</strong><progress id="progress-bar" value="0" max="14" aria-label="تعداد مراحل تأییدشده"></progress></div></div>
+  </div>
+
+
+  <p id="calendar-notice" class="connection-warning" hidden>تقویم بارگذاری نشد؛ تاریخ شمسی را دستی با قالب ۱۴۰۵/۰۶/۱۱ وارد کنید. ثبت فرم همچنان در دسترس است.</p>
+
+  <!-- نوار استعلام سریال و بارگذاری هوشمند -->
+  <div class="serial-panel">
+    <label for="search_sn">شماره‌سریال دستگاه:</label>
+    <input type="text" id="search_sn" placeholder="مثال: 210">
+    <button type="button" class="btn-search" id="loadBtn">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+      استعلام و بارگذاری سوابق
+    </button>
+    <span class="badge-status" id="load-badge">فرم جدید · آمادهٔ تکمیل</span>
+  </div>
+
+  <article id="checklist-content">
+  <!-- صفحه اول -->
+  <div class="section-header">
+    <h2>صفحه اول چک‌لیست — مونتاژ و تولید</h2>
+  </div>
+
+  <div class="sub-title">بخش اول: فرآیند مونتاژ قطعات</div>
+  <div class="table-scroll" tabindex="0" role="region" aria-label="جدول چک‌لیست؛ برای دیدن ستون‌ها افقی پیمایش کنید">
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 14%;">فرآیند</th>
+        <th style="width: 32%;">مشخصات</th>
+        <th style="width: 15%;">اقدامات</th>
+        <th style="width: 12%;">تاریخ (شمسی)</th>
+        <th style="width: 5%;">وضعیت</th>
+        <th style="width: 11%;">تأییدکننده</th>
+        <th style="width: 11%;">توضیحات</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><b>مونتاژ برد</b></td>
+        <td>نوع برد و Connector مقابل:<br><input type="text" id="m1_spec" placeholder="برد و کانکتور..."></td>
+        <td><input type="text" id="m1_act"></td>
+        <td><input type="text" id="m1_date" class="shamsi-date" placeholder="140x/xx/xx"></td>
+        <td class="center"><input type="checkbox" id="m1_status"></td>
+        <td><input type="text" id="m1_conf"></td>
+        <td><input type="text" id="m1_desc"></td>
+      </tr>
+      <tr>
+        <td><b>تست و اصلاح Connector مربوط به FOG</b></td>
+        <td>
+          <div style="margin-bottom: 4px;">
+            <label><input type="checkbox" id="m2_iran"> ایرانی</label> &nbsp;&nbsp;
+            <label><input type="checkbox" id="m2_china"> چینی</label>
+          </div>
+          تأمین‌کننده: <input type="text" id="m2_sup" style="width: 60%; margin-top:2px;"><br>
+          نوع Connector: <input type="text" id="m2_conn" style="width: 60%; margin-top:3px;">
+        </td>
+        <td><input type="text" id="m2_act"></td>
+        <td><input type="text" id="m2_date" class="shamsi-date" placeholder="140x/xx/xx"></td>
+        <td class="center"><input type="checkbox" id="m2_status"></td>
+        <td><input type="text" id="m2_conf"></td>
+        <td><input type="text" id="m2_desc"></td>
+      </tr>
+      <tr>
+        <td><b>مونتاژ شتاب‌سنج</b></td>
+        <td>
+          مدل: <input type="text" id="m3_model" style="width: 75%; margin-top:2px;"><br>
+          شماره‌سریال: <input type="text" id="m3_sn" style="width: 65%; margin-top:3px;">
+        </td>
+        <td><input type="text" id="m3_act"></td>
+        <td><input type="text" id="m3_date" class="shamsi-date" placeholder="140x/xx/xx"></td>
+        <td class="center"><input type="checkbox" id="m3_status"></td>
+        <td><input type="text" id="m3_conf"></td>
+        <td><input type="text" id="m3_desc"></td>
+      </tr>
+      <tr>
+        <td><b>مونتاژ برد و FOG به لاک‌پشتی</b></td>
+        <td>
+          محور X: <input type="text" id="m4_sn_x" style="width: 70%; margin-top:2px;"><br>
+          محور Y: <input type="text" id="m4_sn_y" style="width: 70%; margin-top:2px;"><br>
+          محور Z: <input type="text" id="m4_sn_z" style="width: 70%; margin-top:2px;">
+        </td>
+        <td>مهار کابل‌ها و چسب‌زدن Connectorها</td>
+        <td><input type="text" id="m4_date" class="shamsi-date" placeholder="140x/xx/xx"></td>
+        <td class="center"><input type="checkbox" id="m4_status"></td>
+        <td><input type="text" id="m4_conf"></td>
+        <td><input type="text" id="m4_desc"></td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="sub-title">بخش دوم: فرآیند تولید و شناسه‌گذاری</div>
+  <div class="table-scroll" tabindex="0" role="region" aria-label="جدول چک‌لیست؛ برای دیدن ستون‌ها افقی پیمایش کنید">
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 14%;">فرآیند</th>
+        <th style="width: 32%;">مشخصات</th>
+        <th style="width: 15%;">اقدامات</th>
+        <th style="width: 12%;">تاریخ (شمسی)</th>
+        <th style="width: 5%;">وضعیت</th>
+        <th style="width: 11%;">تأییدکننده</th>
+        <th style="width: 11%;">توضیحات</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><b>اختصاص ID به شماره‌سریال</b></td>
+        <td>شماره‌سریال ثبت‌شده:<br><input type="text" id="p1_sn" placeholder="همگام با شماره‌سریال..." readonly style="background:#f1f5f9; font-weight:bold;"></td>
+        <td>اختصاص ID به واحدهای ORG و Main</td>
+        <td><input type="text" id="p1_date" class="shamsi-date" placeholder="140x/xx/xx"></td>
+        <td class="center"><input type="checkbox" id="p1_status"></td>
+        <td><input type="text" id="p1_conf"></td>
+        <td><input type="text" id="p1_desc"></td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="footer-sign">
+    <div><label>تأیید کنترل کیفیت:</label><input type="text" id="sign_qc"></div>
+    <div><label>تأییدکننده نهایی:</label><input type="text" id="sign_final"></div>
+    <div><label>تحویل‌گیرنده:</label><input type="text" id="sign_receiver"></div>
+  </div>
+
+  <!-- صفحه دوم -->
+  <div class="section-header">
+    <h2>صفحه دوم چک‌لیست — واحد کالیبراسیون</h2>
+  </div>
+
+  <div class="sub-title">۱- بررسی نسخه نرم‌افزار میکروکنترلرهای Main، Alg و MatchBox</div>
+  <div class="table-scroll" tabindex="0" role="region" aria-label="جدول چک‌لیست؛ برای دیدن ستون‌ها افقی پیمایش کنید">
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 10%;">بخش</th>
+        <th style="width: 42%;">مشخصات</th>
+        <th style="width: 12%;">تاریخ (شمسی)</th>
+        <th style="width: 5%;">وضعیت</th>
+        <th style="width: 13%;">تأییدکننده</th>
+        <th style="width: 18%;">توضیحات</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><b>Main</b></td>
+        <td>نسخه Firmware مرجع Main برابر <code>(FW.Ver) = 3.0.9641.56060</code> است.</td>
+        <td><input type="text" id="c1_date" class="shamsi-date" placeholder="140x/xx/xx"></td>
+        <td class="center"><input type="checkbox" id="c1_status"></td>
+        <td><input type="text" id="c1_conf"></td>
+        <td><input type="text" id="c1_desc"></td>
+      </tr>
+      <tr>
+        <td><b>Main</b></td>
+        <td>نسخه Hardware مرجع:<br><input type="text" id="c2_hw"></td>
+        <td><input type="text" id="c2_date" class="shamsi-date" placeholder="140x/xx/xx"></td>
+        <td class="center"><input type="checkbox" id="c2_status"></td>
+        <td><input type="text" id="c2_conf"></td>
+        <td><input type="text" id="c2_desc"></td>
+      </tr>
+      <tr>
+        <td><b>IMU</b></td>
+        <td>نسخه Firmware مرجع MatchBox برابر:<br><input type="text" id="c3_fw"></td>
+        <td><input type="text" id="c3_date" class="shamsi-date" placeholder="140x/xx/xx"></td>
+        <td class="center"><input type="checkbox" id="c3_status"></td>
+        <td><input type="text" id="c3_conf"></td>
+        <td><input type="text" id="c3_desc"></td>
+      </tr>
+      <tr>
+        <td><b>Alg</b></td>
+        <td>نسخه Firmware مرجع Alg برابر <code>(FW.Ver) = 3.0.9656.34204</code> است.</td>
+        <td><input type="text" id="c4_date" class="shamsi-date" placeholder="140x/xx/xx"></td>
+        <td class="center"><input type="checkbox" id="c4_status"></td>
+        <td><input type="text" id="c4_conf"></td>
+        <td><input type="text" id="c4_desc"></td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="sub-title">۲- صحت‌سنجی ضرایب و پروفایل‌های آغاز راه‌اندازی</div>
+  <div class="notice">
+    <b>الزامات کالیبراسیون:</b> برای صحت‌سنجی، ابتدا پروفایل و ضرایب را در بخش <code>Settings</code> نرم‌افزار <code>Load</code> نموده و سپس فقط دکمه <code>Verify</code> را اجرا کنید. در صورت دریافت پیام <code>OK</code>، تیک تأیید را فعال نمایید.
+  </div>
+
+  <div class="table-scroll" tabindex="0" role="region" aria-label="جدول چک‌لیست؛ برای دیدن ستون‌ها افقی پیمایش کنید">
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 10%;">بخش</th>
+        <th style="width: 42%;">مورد صحت‌سنجی</th>
+        <th style="width: 12%;">تاریخ (شمسی)</th>
+        <th style="width: 5%;">وضعیت</th>
+        <th style="width: 13%;">تأییدکننده</th>
+        <th style="width: 18%;">توضیحات</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><b>Main</b></td>
+        <td>صحت‌سنجی ضرایب <code>Reset CalibCoef</code></td>
+        <td><input type="text" id="v1_date" class="shamsi-date" placeholder="140x/xx/xx"></td>
+        <td class="center"><input type="checkbox" id="v1_status"></td>
+        <td><input type="text" id="v1_conf"></td>
+        <td><input type="text" id="v1_desc"></td>
+      </tr>
+      <tr>
+        <td><b>Main</b></td>
+        <td>صحت‌سنجی پروفایل <code>General</code></td>
+        <td><input type="text" id="v2_date" class="shamsi-date" placeholder="140x/xx/xx"></td>
+        <td class="center"><input type="checkbox" id="v2_status"></td>
+        <td><input type="text" id="v2_conf"></td>
+        <td><input type="text" id="v2_desc"></td>
+      </tr>
+      <tr>
+        <td><b>Alg</b></td>
+        <td>تعیین <code>FOG Type</code> و صحت‌سنجی پروفایل مربوط</td>
+        <td><input type="text" id="v3_date" class="shamsi-date" placeholder="140x/xx/xx"></td>
+        <td class="center"><input type="checkbox" id="v3_status"></td>
+        <td><input type="text" id="v3_conf"></td>
+        <td><input type="text" id="v3_desc"></td>
+      </tr>
+      <tr>
+        <td><b>Alg</b></td>
+        <td>صحت‌سنجی پروفایل <code>General</code></td>
+        <td><input type="text" id="v4_date" class="shamsi-date" placeholder="140x/xx/xx"></td>
+        <td class="center"><input type="checkbox" id="v4_status"></td>
+        <td><input type="text" id="v4_conf"></td>
+        <td><input type="text" id="v4_desc"></td>
+      </tr>
+      <tr>
+        <td><b>Alg</b></td>
+        <td>صحت‌سنجی پروفایل <code>LLA</code></td>
+        <td><input type="text" id="v5_date" class="shamsi-date" placeholder="140x/xx/xx"></td>
+        <td class="center"><input type="checkbox" id="v5_status"></td>
+        <td><input type="text" id="v5_conf"></td>
+        <td><input type="text" id="v5_desc"></td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  </article>
+  <div class="submit-area">
+    <button class="btn-submit" id="submitBtn" type="button">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+      ثبت اطلاعات در گیت‌هاب
+    </button>
+    <button type="button" id="downloadBtn" class="btn-secondary">دانلود نسخهٔ Markdown</button>
+    <div id="status-msg" role="status" aria-live="polite"></div>
+    <div id="saved-links"></div>
+  </div>
+
+  </section>
+</main>
+</div>
+
+<!-- All executable dependencies are served from this Pages project. -->
+<script src="assets/theme.js"></script>
+<script src="assets/persian-calendar.js"></script>
+<script src="assets/auth.js"></script>
+<script src="assets/checklist.js"></script>
+</body>
+</html>
