@@ -1,0 +1,6 @@
+{
+  "name": "atlas-f70-checklist",
+  "private": true,
+  "scripts": { "test": "node tests/browser.cjs" },
+  "devDependencies": { "playwright": "1.62.1" }
+}
