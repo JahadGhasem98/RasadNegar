@@ -30,6 +30,60 @@
   let serviceSha = null;
   let busy = false;
 
+  function showAuthMessage(text, kind = 'info') {
+    const el = $('auth-message');
+    if (!el) return;
+    el.textContent = text || '';
+    el.dataset.kind = kind;
+    el.hidden = !text;
+  }
+
+  function showAdminMessage(text, kind = 'info') {
+    const el = $('admin-message');
+    if (!el) return;
+    el.textContent = text || '';
+    el.dataset.kind = kind;
+    el.hidden = !text;
+  }
+
+  function setBusy(state) {
+    busy = !!state;
+    document.querySelectorAll('#auth-gate button, #auth-gate input, #auth-gate select').forEach(el => {
+      el.disabled = !!state;
+    });
+  }
+
+  function setAdminBusy(state) {
+    busy = !!state;
+    document.querySelectorAll('#admin-panel button, #admin-panel input, #admin-panel select').forEach(el => {
+      el.disabled = !!state;
+    });
+  }
+
+  function validatePassword(password) {
+    if (typeof password !== 'string' || password.length < 8) {
+      return 'رمز عبور باید حداقل ۸ کاراکتر باشد.';
+    }
+    if (!/[a-z]/.test(password)) return 'رمز عبور باید حداقل یک حرف کوچک انگلیسی داشته باشد.';
+    if (!/[A-Z]/.test(password)) return 'رمز عبور باید حداقل یک حرف بزرگ انگلیسی داشته باشد.';
+    if (!/[0-9]/.test(password)) return 'رمز عبور باید حداقل یک عدد داشته باشد.';
+    if (![...SPECIAL_CHARS].some(ch => password.includes(ch))) {
+      return `رمز عبور باید حداقل یکی از نویسه‌های ویژه را داشته باشد: ${SPECIAL_CHARS_HINT}`;
+    }
+    return '';
+  }
+
+  function normalizeUsername(value) {
+    const username = String(value || '').trim();
+    if (username.length < 2 || username.length > 64) {
+      throw new Error('نام کاربری باید بین ۲ تا ۶۴ کاراکتر باشد.');
+    }
+    if (/[\u0000-\u001f\u007f\\/]/.test(username)) {
+      throw new Error('نام کاربری نمی‌تواند شامل نویسه‌های کنترلی یا / و \\ باشد.');
+    }
+    return username;
+  }
+
   function explain(error) {
     try {
       if (window.AtlasStorage) return storage().explain(error);
@@ -734,20 +788,30 @@
   }
 
   async function boot() {
+    // Always unlock controls first (previous broken builds could leave disabled=true)
+    try { setBusy(false); } catch { /* ignore */ }
+    busy = false;
+
     session = readSession();
     serviceToken = sessionStorage.getItem(AUTH_CONFIG.tokenKey) || (window.AtlasStorage && window.AtlasStorage.getToken()) || '';
-    if ($('service-provider') && window.AtlasStorage) $('service-provider').value = storage().getProviderId();
-    if ($('admin-service-provider') && window.AtlasStorage) $('admin-service-provider').value = storage().getProviderId();
+    try {
+      if ($('service-provider') && window.AtlasStorage) $('service-provider').value = storage().getProviderId();
+      if ($('admin-service-provider') && window.AtlasStorage) $('admin-service-provider').value = storage().getProviderId();
+    } catch { /* ignore */ }
 
-    $('auth-login-form').addEventListener('submit', event => {
+    // Always show token button; setup button stays available if no local users yet
+    if ($('auth-goto-service')) $('auth-goto-service').hidden = false;
+    if ($('auth-goto-setup')) $('auth-goto-setup').hidden = false;
+
+    if ($('auth-login-form')) $('auth-login-form').addEventListener('submit', event => {
       event.preventDefault();
       withBusy(login);
     });
-    $('auth-setup-form').addEventListener('submit', event => {
+    $('auth-setup-form')?.addEventListener('submit', event => {
       event.preventDefault();
       withBusy(bootstrapAdmin);
     });
-    $('auth-change-form').addEventListener('submit', event => {
+    $('auth-change-form')?.addEventListener('submit', event => {
       event.preventDefault();
       withBusy(changePassword);
     });
@@ -761,7 +825,7 @@
       event.preventDefault();
       withBusy(saveServiceTokenFromGate);
     });
-    $('auth-goto-setup').addEventListener('click', () => {
+    $('auth-goto-setup')?.addEventListener('click', () => {
       showPanel('setup');
       showAuthMessage('اولین حساب را بسازید. بعد از آن کاربران را از پنل مدیریت اضافه کنید.', 'info');
     });
@@ -773,7 +837,7 @@
       showPanel('login');
       showAuthMessage('');
     });
-    $('auth-goto-login').addEventListener('click', () => {
+    $('auth-goto-login')?.addEventListener('click', () => {
       showPanel('login');
       showAuthMessage('');
     });
@@ -823,8 +887,12 @@
         'info'
       );
     } catch (error) {
+      console.error(error);
       showPanel('login');
       showAuthMessage(explain(error), 'error');
+    } finally {
+      try { setBusy(false); } catch { /* ignore */ }
+      busy = false;
     }
   }
 
@@ -855,5 +923,9 @@
     openPasswordChange,
   };
 
-  document.addEventListener('DOMContentLoaded', boot);
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+  } else {
+    boot();
+  }
 })();
