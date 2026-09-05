@@ -38,7 +38,7 @@
 
     <section id="auth-service-panel" class="auth-panel" hidden>
       <h1>توکن سرویس ذخیره‌سازی</h1>
-      <p class="auth-help">این بخش فقط برای مدیریت است. ابتدا سرویس (GitHub یا GitLab) را انتخاب کنید و توکن مربوط را وارد کنید.</p>
+      <p class="auth-help">مدیر سرویس را انتخاب می‌کند: GitHub یا GitLab. سپس توکن همان سرویس را وارد کنید. همهٔ اعضا از همین تنظیم استفاده می‌کنند.</p>
       <form id="auth-service-form" autocomplete="off">
         <label for="service-provider">سرویس ذخیره‌سازی</label>
         <select id="service-provider">
@@ -47,7 +47,7 @@
         </select>
         <label for="service-token-input">توکن سرویس</label>
         <input id="service-token-input" type="password" dir="ltr" autocomplete="off" spellcheck="false" required>
-        <p class="auth-hint" id="service-token-hint">برای GitHub دسترسی repo و برای GitLab دسترسی api لازم است.</p>
+        <p class="auth-hint" id="service-token-hint">GitHub: دسترسی repo · GitLab: دسترسی api</p>
         <button type="submit" class="btn-submit auth-submit">ذخیره و بازگشت به ورود</button>
       </form>
       <button type="button" id="auth-service-back" class="auth-link-btn">بازگشت به ورود</button>
@@ -120,7 +120,7 @@
   </section>
   <button type="button" id="new-record" class="new-record" hidden><span aria-hidden="true">＋</span> چک‌لیست جدید</button>
   <details id="connection-panel" class="connection-panel" hidden>
-    <summary>وضعیت اتصال گیت‌هاب <span id="connection-state">متصل نیست</span></summary>
+    <summary>وضعیت اتصال مخزن <span id="connection-state">متصل نیست</span></summary>
     <p>مقصد ثبت: <bdi dir="ltr">fb_git_amirmahdi/checklist → main → records/atlas-f70</bdi></p>
     <p>مدیریت و تغییر توکن سرویس فقط از <b>پنل مدیریت</b> انجام می‌شود.</p>
     <div class="connection-actions" hidden>
@@ -128,7 +128,7 @@
       <input type="password" id="service-token-sidebar" autocomplete="off" spellcheck="false" dir="ltr" aria-describedby="token-help">
       <button type="button" id="connectBtn" class="btn-search">اتصال</button>
       <button type="button" id="disconnectBtn" class="btn-secondary">قطع اتصال</button>
-      <a href="https://github.com/settings/tokens" target="_blank" rel="noopener noreferrer">ساخت توکن در گیت‌هاب</a>
+      <a href="https://github.com/settings/tokens" target="_blank" rel="noopener noreferrer">ساخت توکن</a>
     </div>
     <p id="token-help">توکن سرویس فقط در پنل مدیریت قابل تنظیم است.</p>
     <p id="http-notice" class="connection-warning" hidden>ارتباط فعلی HTTP است و توکن در مسیر شبکه رمزگذاری نمی‌شود. برای استفادهٔ امن، GitHub و Pages را با HTTPS راه‌اندازی کنید.</p>
@@ -165,7 +165,7 @@
 
       <form id="admin-token-form" class="admin-card" autocomplete="off">
         <h3>توکن سرویس ذخیره‌سازی</h3>
-        <p class="auth-help">مدیر می‌تواند بین GitHub و GitLab جابه‌جا شود. این توکن برای ثبت چک‌لیست همهٔ اعضا استفاده می‌شود.</p>
+        <p class="auth-help">بین GitHub و GitLab جابه‌جا شوید. توکن برای ثبت چک‌لیست همهٔ اعضا استفاده می‌شود و به اعضا نشان داده نمی‌شود.</p>
         <label for="admin-service-provider">سرویس فعال</label>
         <select id="admin-service-provider">
           <option value="github">GitHub — JahadGhasem98/RasadNegar</option>
@@ -173,7 +173,7 @@
         </select>
         <label for="admin-service-token">توکن سرویس</label>
         <input id="admin-service-token" type="password" dir="ltr" spellcheck="false" required>
-        <p class="auth-hint" id="admin-token-hint">برای GitHub: repo · برای GitLab: api</p>
+        <p class="auth-hint" id="admin-token-hint">GitHub: repo · GitLab: api</p>
         <button type="submit" class="btn-search">ذخیره سرویس و توکن</button>
       </form>
     </div>
@@ -469,7 +469,7 @@
   <div class="submit-area">
     <button class="btn-submit" id="submitBtn" type="button">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
-      ثبت اطلاعات در گیت‌هاب
+      ثبت اطلاعات در مخزن
     </button>
     <button type="button" id="downloadBtn" class="btn-secondary">دانلود نسخهٔ Markdown</button>
     <div id="status-msg" role="status" aria-live="polite"></div>
