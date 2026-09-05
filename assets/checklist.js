@@ -14,19 +14,41 @@
   };
 
   function loadProjectsMap() {
+    let map = { ...DEFAULT_PROJECTS };
     try {
       const raw = localStorage.getItem(PROJECTS_KEY);
-      if (!raw) return { ...DEFAULT_PROJECTS };
-      const parsed = JSON.parse(raw);
-      if (!parsed || typeof parsed !== 'object') return { ...DEFAULT_PROJECTS };
-      return { ...DEFAULT_PROJECTS, ...parsed };
-    } catch {
-      return { ...DEFAULT_PROJECTS };
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          for (const [id, item] of Object.entries(parsed)) {
+            if (item && typeof item === 'object' && item.name) {
+              map[id] = {
+                id: item.id || id,
+                name: item.name,
+                titleFa: item.titleFa || `چک‌لیست پروژه ${item.name}`,
+                directory: item.directory || `records/${id}`,
+                markdownTitle: item.markdownTitle || `رصدنگار — چک‌لیست پروژه ${item.name}`,
+                formTemplate: item.formTemplate || 'f70',
+              };
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.warn('loadProjectsMap', error);
     }
+    // Always keep default project
+    if (!map['atlas-f70']) map['atlas-f70'] = { ...DEFAULT_PROJECTS['atlas-f70'] };
+    return map;
   }
 
   function saveProjectsMap(map) {
-    localStorage.setItem(PROJECTS_KEY, JSON.stringify(map));
+    const clean = {};
+    for (const [id, item] of Object.entries(map || {})) {
+      if (item && item.name) clean[id] = item;
+    }
+    if (!clean['atlas-f70']) clean['atlas-f70'] = { ...DEFAULT_PROJECTS['atlas-f70'] };
+    localStorage.setItem(PROJECTS_KEY, JSON.stringify(clean));
   }
 
   let projectsMap = loadProjectsMap();
@@ -47,7 +69,7 @@
   }
   const $ = id => document.getElementById(id);
   const content = $('checklist-content');
-  const fields = [...content.querySelectorAll('input[id], textarea[id], select[id]')];
+  const fields = content ? [...content.querySelectorAll('input[id], textarea[id], select[id]')] : [];
   let token = '';
   let projectId = null;
   let busy = false;
@@ -570,14 +592,29 @@
     const grid = $('project-grid');
     const empty = $('project-hub-empty');
     if (!grid) return;
+    projectsMap = loadProjectsMap();
     grid.replaceChildren();
-    const items = Object.values(projectsMap).sort((a, b) => a.name.localeCompare(b.name, 'fa'));
-    if (empty) empty.hidden = items.length > 0;
+    const items = Object.values(projectsMap)
+      .filter(project => project && project.name)
+      .sort((a, b) => String(a.name).localeCompare(String(b.name), 'fa'));
+    if (empty) {
+      empty.hidden = items.length > 0;
+      empty.textContent = items.length ? '' : 'هنوز پروژه‌ای تعریف نشده است. از پنل مدیریت پروژه اضافه کنید.';
+    }
     for (const project of items) {
       const card = document.createElement('button');
       card.type = 'button';
       card.className = 'project-card';
-      card.innerHTML = `<span class="project-card-icon">📁</span><strong>${project.name}</strong><small dir="ltr">${project.directory}</small>`;
+      card.setAttribute('data-project-id', project.id);
+      const icon = document.createElement('span');
+      icon.className = 'project-card-icon';
+      icon.textContent = '📁';
+      const title = document.createElement('strong');
+      title.textContent = project.name;
+      const meta = document.createElement('small');
+      meta.dir = 'ltr';
+      meta.textContent = project.directory || `records/${project.id}`;
+      card.append(icon, title, meta);
       card.addEventListener('click', () => openProject(project.id));
       grid.append(card);
     }
@@ -810,20 +847,36 @@
         $('connection-state').textContent = 'اتصال برقرار نشد';
       }
     }
-    if (window.AtlasAuth && typeof window.AtlasAuth.initAdminPanel === 'function') {
-      await window.AtlasAuth.initAdminPanel();
+    // Admin panel must appear even if remote user sync fails.
+    if (currentUser.role === 'admin' && $('admin-panel')) {
+      $('admin-panel').hidden = false;
     }
-    renderAdminProjects();
+    try {
+      if (window.AtlasAuth && typeof window.AtlasAuth.initAdminPanel === 'function') {
+        await window.AtlasAuth.initAdminPanel();
+      }
+    } catch (error) {
+      console.warn('initAdminPanel', error);
+      if (currentUser.role === 'admin' && $('admin-panel')) $('admin-panel').hidden = false;
+      message(error.message || 'بارگذاری پنل مدیریت با خطا روبه‌رو شد.', 'error');
+    }
+
+    projectsMap = loadProjectsMap();
+    try { renderAdminProjects(); } catch (error) { console.warn(error); }
     showProjectHub();
+
     const requestedProject = new URLSearchParams(location.search).get('project');
     if (requestedProject && projectsMap[requestedProject]) {
-      openProject(requestedProject);
+      try { openProject(requestedProject); } catch (error) { console.warn(error); }
     }
-    if (window.ChecklistCalendar) {
+
+    if (window.ChecklistCalendar && content) {
       try {
         window.ChecklistCalendar.attach(content.querySelectorAll('.shamsi-date'));
-      } catch { $('calendar-notice').hidden = false; }
-    } else $('calendar-notice').hidden = false;
+      } catch { if ($('calendar-notice')) $('calendar-notice').hidden = false; }
+    } else if ($('calendar-notice')) {
+      $('calendar-notice').hidden = false;
+    }
   }
 
   document.addEventListener('atlas-auth-ready'
