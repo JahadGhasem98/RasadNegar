@@ -1,4 +1,15 @@
 {
   "schemaVersion": 1,
-  "users": []
+  "users": [
+    {
+      "username": "10108",
+      "passwordHash": "QsjnlI3Qki7ZBrqxJ1fqjBoFHQ3qxq+pJGosvTQQWyo=",
+      "salt": "RiZSK8/oPzqyKBD+Xiskdw==",
+      "role": "admin",
+      "mustChangePassword": false,
+      "active": true,
+      "createdAt": "2026-09-05T12:02:55.598Z",
+      "createdBy": "system"
+    }
+  ]
 }
