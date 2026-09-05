@@ -10,6 +10,16 @@
       "active": true,
       "createdAt": "2026-09-05T12:02:55.598Z",
       "createdBy": "system"
+    },
+    {
+      "username": "10100",
+      "passwordHash": "KA8TQfLf7GHic5kuwnnFz4R1KX70AWfLS/9uTG+Amd4=",
+      "salt": "UvhFiNdIMhbHQnj29p68Uw==",
+      "role": "member",
+      "mustChangePassword": true,
+      "active": true,
+      "createdAt": "2026-09-05T15:05:37.360Z",
+      "createdBy": "10108"
     }
   ]
 }
