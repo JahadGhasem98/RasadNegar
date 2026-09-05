@@ -37,11 +37,17 @@
     </section>
 
     <section id="auth-service-panel" class="auth-panel" hidden>
-      <h1>توکن سرویس گیت‌هاب</h1>
-      <p class="auth-help">این بخش فقط برای مدیریت است. توکن با دسترسی api را وارد کنید تا ورود کاربران و ثبت چک‌لیست در این مرورگر ممکن شود. پس از ورود، تغییر توکن از پنل مدیریت انجام می‌شود.</p>
+      <h1>توکن سرویس ذخیره‌سازی</h1>
+      <p class="auth-help">این بخش فقط برای مدیریت است. ابتدا سرویس (GitHub یا GitLab) را انتخاب کنید و توکن مربوط را وارد کنید.</p>
       <form id="auth-service-form" autocomplete="off">
-        <label for="service-token-input">توکن سرویس (api)</label>
+        <label for="service-provider">سرویس ذخیره‌سازی</label>
+        <select id="service-provider">
+          <option value="github">GitHub — JahadGhasem98/RasadNegar</option>
+          <option value="gitlab">GitLab — fb_git_amirmahdi/checklist</option>
+        </select>
+        <label for="service-token-input">توکن سرویس</label>
         <input id="service-token-input" type="password" dir="ltr" autocomplete="off" spellcheck="false" required>
+        <p class="auth-hint" id="service-token-hint">برای GitHub دسترسی repo و برای GitLab دسترسی api لازم است.</p>
         <button type="submit" class="btn-submit auth-submit">ذخیره و بازگشت به ورود</button>
       </form>
       <button type="button" id="auth-service-back" class="auth-link-btn">بازگشت به ورود</button>
@@ -57,7 +63,7 @@
         <input id="setup-password" type="password" dir="ltr" autocomplete="new-password" required>
         <label for="setup-password-confirm">تکرار رمز عبور</label>
         <input id="setup-password-confirm" type="password" dir="ltr" autocomplete="new-password" required>
-        <label for="setup-token">توکن سرویس گیت‌هاب (اختیاری)</label>
+        <label for="setup-token">توکن سرویس (اختیاری — GitHub یا GitLab)</label>
         <input id="setup-token" type="password" dir="ltr" autocomplete="off" spellcheck="false">
         <p class="auth-hint">رمز باید شامل حرف بزرگ، حرف کوچک، عدد و یکی از نویسه‌های ویژه <bdi dir="ltr">(!@#$%^&amp;*_+...)</bdi> باشد.</p>
         <button type="submit" class="btn-submit auth-submit">ساخت اکانت</button>
@@ -118,8 +124,8 @@
     <p>مقصد ثبت: <bdi dir="ltr">fb_git_amirmahdi/checklist → main → records/atlas-f70</bdi></p>
     <p>مدیریت و تغییر توکن سرویس فقط از <b>پنل مدیریت</b> انجام می‌شود.</p>
     <div class="connection-actions" hidden>
-      <label for="github-token">توکن سرویس (فقط مدیریت)</label>
-      <input type="password" id="github-token" autocomplete="off" spellcheck="false" dir="ltr" aria-describedby="token-help">
+      <label for="service-token-sidebar">توکن سرویس (فقط مدیریت)</label>
+      <input type="password" id="service-token-sidebar" autocomplete="off" spellcheck="false" dir="ltr" aria-describedby="token-help">
       <button type="button" id="connectBtn" class="btn-search">اتصال</button>
       <button type="button" id="disconnectBtn" class="btn-secondary">قطع اتصال</button>
       <a href="https://github.com/settings/tokens" target="_blank" rel="noopener noreferrer">ساخت توکن در گیت‌هاب</a>
@@ -158,11 +164,17 @@
       </form>
 
       <form id="admin-token-form" class="admin-card" autocomplete="off">
-        <h3>توکن سرویس گیت‌هاب</h3>
-        <p class="auth-help">این توکن برای ثبت چک‌لیست همهٔ اعضا استفاده می‌شود و در رابط اعضا نمایش داده نمی‌شود.</p>
-        <label for="admin-service-token">توکن جدید (api)</label>
+        <h3>توکن سرویس ذخیره‌سازی</h3>
+        <p class="auth-help">مدیر می‌تواند بین GitHub و GitLab جابه‌جا شود. این توکن برای ثبت چک‌لیست همهٔ اعضا استفاده می‌شود.</p>
+        <label for="admin-service-provider">سرویس فعال</label>
+        <select id="admin-service-provider">
+          <option value="github">GitHub — JahadGhasem98/RasadNegar</option>
+          <option value="gitlab">GitLab — fb_git_amirmahdi/checklist</option>
+        </select>
+        <label for="admin-service-token">توکن سرویس</label>
         <input id="admin-service-token" type="password" dir="ltr" spellcheck="false" required>
-        <button type="submit" class="btn-search">ذخیره توکن سرویس</button>
+        <p class="auth-hint" id="admin-token-hint">برای GitHub: repo · برای GitLab: api</p>
+        <button type="submit" class="btn-search">ذخیره سرویس و توکن</button>
       </form>
     </div>
 
@@ -470,6 +482,7 @@
 
 <!-- All executable dependencies are served from this Pages project. -->
 <script src="assets/theme.js"></script>
+<script src="assets/storage-provider.js"></script>
 <script src="assets/persian-calendar.js"></script>
 <script src="assets/auth.js"></script>
 <script src="assets/checklist.js"></script>
