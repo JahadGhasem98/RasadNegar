@@ -1,4 +1,6 @@
-/* Browser-only GitLab repository storage. Credentials deliberately stay in memory. */
+// checklist.js
+/* Browser-only repository storage. Credentials deliberately stay in memory.
+   Supports both GitHub and GitLab via AtlasStorage. */
 (() => {
   'use strict';
   /* Platform brand: رصدنگار. Projects are selectable cards; records live under records/<id>. */
@@ -34,17 +36,13 @@
   let activeProject = null;
 
   const CONFIG = {
+    get host() { return window.AtlasStorage ? AtlasStorage.provider().host : 'http://gitlab.faraabin.ir'; },
+    get project() { return window.AtlasStorage ? AtlasStorage.provider().project : 'fb_git_amirmahdi/checklist'; },
+    get branch() { return window.AtlasStorage ? AtlasStorage.provider().branch : 'main'; },
     get directory() { return activeProject ? activeProject.directory : 'records/atlas-f70'; },
     brandName: 'رصدنگار',
     get activeProjectId() { return activeProjectId; },
-    get webBase() { return window.AtlasStorage ? window.AtlasStorage.provider().webBase : ''; },
-    get branch() { return window.AtlasStorage ? window.AtlasStorage.provider().branch : 'main'; },
   };
-
-  function storage() {
-    if (!window.AtlasStorage) throw new Error('ماژول ذخیره‌سازی بارگذاری نشده است.');
-    return window.AtlasStorage;
-  }
   const $ = id => document.getElementById(id);
   const content = $('checklist-content');
   const fields = [...content.querySelectorAll('input[id], textarea[id], select[id]')];
@@ -123,8 +121,60 @@
 
   function pathFor(serial) { return `${CONFIG.directory}/${serial}.md`; }
 
+  function projectApi() {
+    if (window.AtlasStorage) {
+      const p = AtlasStorage.provider();
+      if (p.id === 'github') return `/repos/${p.owner}/${p.repo}`;
+      return `/projects/${encodeURIComponent(projectId || p.project)}`;
+    }
+    return `/projects/${encodeURIComponent(projectId || CONFIG.project)}`;
+  }
+
+  async function api(path, options = {}) {
+    if (window.AtlasStorage) {
+      return AtlasStorage.api(path, options);
+    }
+    // Fallback
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 25000);
+    try {
+      const response = await fetch(`${CONFIG.host}/api/v4${path}`, {
+        method: options.method || 'GET',
+        credentials: 'omit',
+        cache: 'no-store',
+        redirect: 'error',
+        signal: controller.signal,
+        headers: {
+          ...(token ? { 'PRIVATE-TOKEN': token } : {}),
+          ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+        },
+        ...(options.body ? { body: JSON.stringify(options.body) } : {}),
+      });
+      if (!response.ok) throw new ApiError(response.status);
+      return await response.json();
+    } catch (error) {
+      if (error instanceof ApiError) throw error;
+      throw new Error('پاسخ معتبر از گیت‌لب دریافت نشد. اتصال شبکه، DNS و اجازهٔ دسترسی مرورگر (CORS) را بررسی کنید. اطلاعات فرم حفظ شده است.');
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
   function explain(error) {
-    return storage().explain(error);
+    if (window.AtlasStorage && error instanceof AtlasStorage.ApiError) {
+      return AtlasStorage.explain(error);
+    }
+    if (!(error instanceof ApiError)) return error.message;
+    const messages = {
+      400: 'ثبت انجام نشد؛ ممکن است فایل هم‌زمان تغییر کرده باشد یا قانون مخزن مانع ثبت شده باشد. ابتدا نسخهٔ Markdown خود را دانلود کنید و سپس سوابق را دوباره بارگذاری کنید.',
+      401: 'توکن نامعتبر یا منقضی است. دوباره به گیت‌لب متصل شوید؛ اطلاعات فرم حفظ شده است.',
+      403: 'اجازهٔ ثبت ندارید. توکن باید دسترسی api و حساب شما اجازهٔ Push روی شاخهٔ main داشته باشد.',
+      404: 'پروژه یا شاخه پیدا نشد، یا حساب شما به آن دسترسی ندارد.',
+      409: 'این فایل هم‌زمان تغییر کرده است. ابتدا نسخهٔ Markdown خود را دانلود کنید و سپس سوابق را دوباره بارگذاری کنید.',
+      413: 'حجم اطلاعات برای ثبت در سرور بیش از حد مجاز است.',
+      429: 'تعداد درخواست‌ها زیاد است. کمی بعد دوباره تلاش کنید.',
+    };
+    return messages[error.status] || `گیت‌لب خطای ${error.status} برگرداند؛ اطلاعات فرم حفظ شده است.`;
   }
 
   async function withBusy(action) {
@@ -146,10 +196,9 @@
 
   function requireConnection() {
     if (token && projectId) return true;
-    if ($('connection-panel')) $('connection-panel').open = true;
-    $('service-token-sidebar')?.focus();
-    const label = window.AtlasStorage ? storage().provider().label : 'مخزن';
-    message(`ابتدا توکن سرویس ${label} را از پنل مدیریت تنظیم کنید.`, 'error');
+    $('connection-panel').open = true;
+    $('gitlab-token').focus();
+    message('ابتدا در بخش اتصال، توکن شخصی گیت‌لب را وارد کنید. سپس دوباره ثبت یا بارگذاری را بزنید.', 'error');
     return false;
   }
 
@@ -158,9 +207,8 @@
       message('فقط مدیریت می‌تواند توکن سرویس را تغییر دهد.', 'error');
       return;
     }
-    const input = $('service-token-sidebar');
-    const candidate = (input?.value || '').trim();
-    if (input) input.value = '';
+    const candidate = $('gitlab-token').value.trim();
+    $('gitlab-token').value = '';
     if (!candidate) { message('توکن دسترسی را وارد کنید.', 'error'); return; }
     await withBusy(async () => {
       ++catalogEpoch;
@@ -168,25 +216,50 @@
       renderCatalog();
       token = candidate;
       projectId = null;
-      storage().setToken(token);
-      sessionStorage.setItem('atlas_f70_service_token_v1', token);
-      message(`در حال بررسی دسترسی ${storage().provider().label}…`);
-      const info = await storage().ensureProject(token);
-      projectId = info.id;
-      if (window.AtlasAuth && typeof window.AtlasAuth.updateServiceTokenFromAdmin === 'function') {
-        try { await window.AtlasAuth.updateServiceTokenFromAdmin(token, storage().getProviderId()); } catch { /* keep session token */ }
+      message('در حال بررسی حساب و دسترسی به پروژه…');
+      try {
+        if (window.AtlasStorage) {
+          // Use AtlasStorage to validate project
+          const result = await AtlasStorage.ensureProject(token);
+          projectId = result.id;
+          const p = AtlasStorage.provider();
+          if (p.id === 'github') {
+            // GitHub: no branch can_push check; just rely on ensureProject success
+          } else {
+            const branch = await AtlasStorage.api(
+              `/projects/${encodeURIComponent(p.project)}/repository/branches/${encodeURIComponent(p.branch)}`,
+              { token }
+            );
+            if (branch.can_push === false) throw new AtlasStorage.ApiError(403);
+          }
+        } else {
+          const user = await api('/user');
+          const project = await api(`/projects/${encodeURIComponent(CONFIG.project)}`);
+          projectId = project.id;
+          const branch = await api(`${projectApi()}/repository/branches/${encodeURIComponent(CONFIG.branch)}`);
+          if (branch.can_push === false) throw new ApiError(403);
+        }
+        sessionStorage.setItem('atlas_f70_service_token_v1', token);
+        if (window.AtlasAuth && typeof window.AtlasAuth.updateServiceTokenFromAdmin === 'function') {
+          try { await window.AtlasAuth.updateServiceTokenFromAdmin(token); } catch { /* session token still active */ }
+        }
+        $('connection-state').textContent = 'متصل';
+        $('connection-panel').open = false;
+        message('توکن سرویس فعال شد. اعضا از همین توکن (بدون مشاهدهٔ آن) برای ثبت استفاده می‌کنند.', 'success');
+        refreshCatalog();
+      } catch (error) {
+        token = '';
+        projectId = null;
+        $('connection-state').textContent = 'اتصال برقرار نشد';
+        throw error;
       }
-      $('connection-state').textContent = `متصل به ${storage().provider().label}`;
-      if ($('connection-panel')) $('connection-panel').open = false;
-      message(`اتصال به ${storage().provider().label} برقرار شد.`, 'success');
-      await refreshCatalog();
     });
   }
 
   function disconnect() {
     token = '';
     projectId = null;
-    $('service-token-sidebar').value = '';
+    $('gitlab-token').value = '';
     $('connection-state').textContent = 'متصل نیست';
     $('connection-panel').open = true;
     message('اتصال قطع شد و توکن از حافظهٔ صفحه حذف شد. اطلاعات فرم همچنان در صفحه است.');
@@ -242,36 +315,44 @@
 
   async function refreshCatalog() {
     const epoch = ++catalogEpoch;
-    if ($('catalog-status')) {
-      $('catalog-status').textContent = 'در حال دریافت فایل‌ها…';
-      $('catalog-status').dataset.kind = 'info';
-    }
-    $('refresh-files')?.setAttribute('aria-busy', 'true');
+    $('catalog-status').textContent = 'در حال دریافت فایل‌ها…';
+    $('catalog-status').dataset.kind = 'info';
+    $('refresh-files').setAttribute('aria-busy', 'true');
+    const files = [];
     try {
-      if (!token) throw Object.assign(new Error('no token'), { status: 401 });
-      const files = await storage().listMarkdown(CONFIG.directory, token);
-      if (epoch !== catalogEpoch) return;
-      catalog = [...new Map(files.map(file => [file.name, file])).values()]
-        .sort((a, b) => a.name.localeCompare(b.name, 'fa', { numeric: true }));
-      renderCatalog();
-      if ($('catalog-status')) {
-        $('catalog-status').textContent =
-          `به‌روز شد · ${new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' })} · ${storage().provider().label}`;
+      if (window.AtlasStorage) {
+        const list = await AtlasStorage.listMarkdown(CONFIG.directory, token);
+        if (epoch !== catalogEpoch) return;
+        files.push(...list);
+      } else {
+        for (let page = 1; ; page++) {
+          let batch;
+          try {
+            batch = await api(`${projectApi()}/repository/tree?path=${encodeURIComponent(CONFIG.directory)}&ref=${encodeURIComponent(CONFIG.branch)}&per_page=100&page=${page}`);
+          } catch (error) {
+            if (!(error instanceof ApiError) || error.status !== 404 || page !== 1) throw error;
+            await api(`/projects/${encodeURIComponent(CONFIG.project)}`);
+            await api(`${projectApi()}/repository/branches/${encodeURIComponent(CONFIG.branch)}`);
+            batch = [];
+          }
+          if (epoch !== catalogEpoch) return;
+          if (!Array.isArray(batch)) throw new Error('پاسخ فهرست فایل‌ها معتبر نیست.');
+          files.push(...batch.filter(file => file.type === 'blob' && file.name.endsWith('.md') && file.path === `${CONFIG.directory}/${file.name}`));
+          if (batch.length < 100) break;
+        }
       }
+      if (epoch !== catalogEpoch) return;
+      catalog = [...new Map(files.map(file => [file.name, file])).values()].sort((a, b) => a.name.localeCompare(b.name, 'fa', { numeric: true }));
+      renderCatalog();
+      $('catalog-status').textContent = `به‌روز شد · ${new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' })}`;
     } catch (error) {
       if (epoch !== catalogEpoch) return;
-      if ($('catalog-status')) {
-        $('catalog-status').dataset.kind = 'error';
-        $('catalog-status').textContent = error && [401,403,404].includes(error.status)
-          ? 'برای مشاهدهٔ فایل‌ها توکن سرویس را تنظیم کنید.'
-          : 'دریافت فهرست انجام نشد؛ دوباره تازه‌سازی کنید.';
-      }
-      if (!catalog.length && $('file-empty')) {
-        $('file-empty').hidden = false;
-        $('file-empty').textContent = 'فهرست فایل‌ها در دسترس نیست.';
-      }
+      $('catalog-status').dataset.kind = 'error';
+      $('catalog-status').textContent = error instanceof ApiError && [401,403,404].includes(error.status)
+        ? 'برای مشاهدهٔ فایل‌ها به حساب گیت‌لب متصل شوید.' : 'دریافت فهرست انجام نشد؛ دوباره تازه‌سازی کنید.';
+      if (!catalog.length) { $('file-empty').hidden = false; $('file-empty').textContent = 'فهرست فایل‌ها در دسترس نیست.'; }
     } finally {
-      if (epoch === catalogEpoch) $('refresh-files')?.removeAttribute('aria-busy');
+      if (epoch === catalogEpoch) $('refresh-files').removeAttribute('aria-busy');
     }
   }
 
@@ -279,25 +360,33 @@
     if (busy) return;
     try {
       const serial = file.name.slice(0, -3);
-      if (normalizeSerial(serial) !== serial) throw new Error('نام این فایل با شماره‌سریال فرم سازگار نیست؛ آن را از پیوند پوشه در مخزن باز کنید.');
+      if (normalizeSerial(serial) !== serial) throw new Error('نام این فایل با شماره‌سریال فرم سازگار نیست؛ آن را از پیوند پوشه در گیت‌لب باز کنید.');
       loadRecord(serial);
     } catch (error) { message(error.message, 'error'); }
   }
 
   async function getFile(serial) {
     try {
-      const file = await storage().readFile(pathFor(serial), token);
-      if (!file) return null;
-      return { serial, sha: file.sha, markdown: file.text };
+      if (window.AtlasStorage) {
+        const file = await AtlasStorage.readFile(pathFor(serial), token);
+        if (!file) return null;
+        return { serial, sha: file.sha, markdown: file.text };
+      }
+      const file = await api(`${projectApi()}/repository/files/${encodeURIComponent(pathFor(serial))}?ref=${encodeURIComponent(CONFIG.branch)}`);
+      if (!file.last_commit_id || typeof file.content !== 'string' || file.encoding !== 'base64') {
+        throw new Error('پاسخ فایل از گیت‌لب کامل نیست؛ برای جلوگیری از بازنویسی، عملیات متوقف شد.');
+      }
+      const bytes = Uint8Array.from(atob(file.content.replace(/\s/g, '')), char => char.charCodeAt(0));
+      return { serial, sha: file.last_commit_id, markdown: new TextDecoder('utf-8', { fatal: true }).decode(bytes) };
     } catch (error) {
-      if (error && error.status === 404) return null;
+      if (error instanceof ApiError && error.status === 404) return null;
       throw error;
     }
   }
 
   function parseRecord(markdown, serial) {
     const match = markdown.match(/<!-- CHECKLIST_DATA_V1\s*\n([\s\S]*?)\nCHECKLIST_DATA_END -->/);
-    if (!match) throw new Error('فایل موجود، دادهٔ قابل بارگذاری این فرم را ندارد. فایل را در مخزن بررسی کنید؛ بازنویسی خودکار انجام نمی‌شود.');
+    if (!match) throw new Error('فایل موجود، دادهٔ قابل بارگذاری این فرم را ندارد. فایل را در گیت‌لب بررسی کنید؛ بازنویسی خودکار انجام نمی‌شود.');
     let record;
     try { record = JSON.parse(match[1]); }
     catch { throw new Error('دادهٔ فرم در فایل معتبر نیست؛ فایل موجود بازنویسی نمی‌شود.'); }
@@ -327,10 +416,11 @@
     await withBusy(async () => {
       const serial = normalizeSerial(typeof requestedSerial === 'string' ? requestedSerial : $('search_sn').value);
       if (isDirty() && !window.confirm('بارگذاری، مقادیر فعلی فرم را جایگزین می‌کند. ادامه می‌دهید؟')) return;
-      message('در حال خواندن فایل Markdown از مخزن…');
+      message('در حال خواندن فایل Markdown از گیت‌لب…');
       const file = await getFile(serial);
       if (!file) {
-        await storage().ensureProject(token);
+        await api(`/projects/${encodeURIComponent(CONFIG.project)}`);
+        await api(`${projectApi()}/repository/branches/${encodeURIComponent(CONFIG.branch)}`);
         if (requestedSerial) {
           refreshCatalog();
           throw new Error('این فایل دیگر در پوشه موجود نیست. اطلاعات فعلی فرم حفظ شد.');
@@ -408,9 +498,27 @@
   }
 
   function showLinks(serial, sha) {
+    if (window.AtlasStorage) {
+      const filePath = pathFor(serial);
+      const links = [
+        ['مشاهدهٔ فایل Markdown', AtlasStorage.webFileUrl(filePath)],
+        ['مشاهدهٔ Commit', AtlasStorage.webCommitUrl(sha)],
+      ];
+      $('saved-links').replaceChildren();
+      for (const [title, href] of links) {
+        const link = document.createElement('a');
+        link.textContent = title;
+        link.href = href;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        $('saved-links').append(link);
+      }
+      return;
+    }
+    const base = `${CONFIG.host}/${CONFIG.project}`;
     const links = [
-      ['مشاهدهٔ فایل Markdown', storage().webFileUrl(pathFor(serial))],
-      ['مشاهدهٔ Commit', storage().webCommitUrl(sha)],
+      ['مشاهدهٔ فایل Markdown', `${base}/-/blob/${encodeURIComponent(CONFIG.branch)}/${pathFor(serial).split('/').map(encodeURIComponent).join('/')}`],
+      ['مشاهدهٔ Commit', `${base}/-/commit/${encodeURIComponent(sha)}`],
     ];
     $('saved-links').replaceChildren();
     for (const [title, href] of links) {
@@ -464,17 +572,32 @@
         throw new Error('فایلی که بارگذاری کرده بودید اکنون در مخزن وجود ندارد. برای بررسی حذف یا جابه‌جایی فایل، مخزن را باز کنید.');
       }
 
+      const action = { action: remote ? 'update' : 'create', file_path: pathFor(serial), content: markdown, encoding: 'text' };
+      if (remote) action.last_commit_id = baseline.sha;
       pendingWrite = { serial, markdown };
-      const result = await storage().writeFile(
-        pathFor(serial),
-        markdown,
-        `${remote ? 'Update' : 'Create'} ${(activeProject && activeProject.name) || 'project'} checklist: ${serial}`,
-        remote ? baseline.sha : null,
-        token
-      );
-      const newSha = result?.sha;
-      if (!newSha) throw new Error('پاسخ ثبت کامل نیست. دوباره «ثبت» را بزنید تا وضعیت فایل بررسی شود.');
-      saved(serial, newSha, markdown);
+      let commit;
+      try {
+        if (window.AtlasStorage) {
+          const result = await AtlasStorage.writeFile(pathFor(serial), markdown, `${remote ? 'Update' : 'Create'} ${(activeProject && activeProject.name) || "project"} checklist: ${serial} [skip ci]`, remote ? baseline.sha : null, token);
+          commit = { id: result.sha };
+        } else {
+          commit = await api(`${projectApi()}/repository/commits`, {
+            method: 'POST',
+            body: {
+              branch: CONFIG.branch,
+              commit_message: `${remote ? 'Update' : 'Create'} ${(activeProject && activeProject.name) || "project"} checklist: ${serial} [skip ci]`,
+              actions: [action],
+            },
+          });
+        }
+      } catch (error) {
+        if (!(error instanceof ApiError)) {
+          throw new Error('پاسخ ثبت دریافت نشد؛ ممکن است فایل در سرور ثبت شده باشد. دوباره «ثبت» را بزنید تا ابتدا نتیجه بررسی شود. اطلاعات فرم حفظ شده است.');
+        }
+        throw error;
+      }
+      if (!commit.id) throw new Error('پاسخ ثبت کامل نیست. دوباره «ثبت» را بزنید تا وضعیت فایل بررسی شود.');
+      saved(serial, commit.id, markdown);
     });
   }
 
@@ -488,7 +611,7 @@
       link.download = `${serial}.md`;
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
-      message('نسخهٔ Markdown برای دانلود آماده شد. دانلود به‌تنهایی چیزی در مخزن ثبت نمی‌کند.');
+      message('نسخهٔ Markdown برای دانلود آماده شد. دانلود به‌تنهایی چیزی در گیت‌لب ثبت نمی‌کند.');
     } catch (error) { message(error.message, 'error'); }
   }
 
@@ -531,7 +654,7 @@
       message('شماره‌سریال دستگاه جدید را وارد کنید.');
       $('search_sn').focus();
     });
-    $('service-token-sidebar').addEventListener('keydown', event => {
+    $('gitlab-token').addEventListener('keydown', event => {
       if (event.key === 'Enter' && !busy) { event.preventDefault(); connect(); }
     });
     $('connectBtn').addEventListener('click', connect);
@@ -660,7 +783,16 @@
     if ($('active-project-label')) $('active-project-label').textContent = project.name;
     if ($('sidebar-footer-project')) $('sidebar-footer-project').textContent = project.name;
     const link = $('folder-path-link');
-    if (link) link.href = storage().webTreeUrl(project.directory);
+    if (link) {
+      if (window.AtlasStorage) {
+        const p = AtlasStorage.provider();
+        link.href = p.id === 'github'
+          ? `${p.webBase}/tree/${p.branch}/${project.directory}`
+          : `${p.webBase}/-/tree/${p.branch}/${project.directory}`;
+      } else {
+        link.href = `http://gitlab.faraabin.ir/fb_git_amirmahdi/checklist/-/tree/main/${project.directory}`;
+      }
+    }
     if ($('folder-path-label')) $('folder-path-label').textContent = project.directory.replaceAll('/', ' / ');
     const crumb = document.querySelector('#editor-heading .breadcrumb');
     if (crumb) crumb.innerHTML = `رصدنگار <span>/</span> پروژه‌ها <span>/</span> <bdi>${project.name}</bdi> <span>/</span> چک‌لیست دستگاه`;
@@ -712,8 +844,45 @@
   async function ensureProjectRepoFiles(project) {
     if (!token) return;
     try {
-      await storage().writeFile(`${project.directory}/.gitkeep`, '', `feat(projects): init ${project.name} records`, null, token);
-      await storage().writeFile(`forms/${project.id}.html`, buildProjectFormHtml(project), `feat(projects): create ${project.name} form page`, null, token);
+      if (!projectId) {
+        if (window.AtlasStorage) {
+          const result = await AtlasStorage.ensureProject(token);
+          projectId = result.id;
+        } else {
+          const projectInfo = await api(`/projects/${encodeURIComponent(CONFIG.project)}`);
+          projectId = projectInfo.id;
+        }
+      }
+      const actions = [];
+      actions.push({
+        action: 'create',
+        file_path: `${project.directory}/.gitkeep`,
+        content: '',
+        encoding: 'text',
+      });
+      actions.push({
+        action: 'create',
+        file_path: `forms/${project.id}.html`,
+        content: buildProjectFormHtml(project),
+        encoding: 'text',
+      });
+      try {
+        if (window.AtlasStorage) {
+          await AtlasStorage.writeFile(`${project.directory}/.gitkeep`, '', `feat(projects): create ${project.name} checklist page [skip ci]`, null, token);
+          await AtlasStorage.writeFile(`forms/${project.id}.html`, buildProjectFormHtml(project), `feat(projects): create ${project.name} checklist page [skip ci]`, null, token);
+        } else {
+          await api(`${projectApi()}/repository/commits`, {
+            method: 'POST',
+            body: {
+              branch: CONFIG.branch,
+              commit_message: `feat(projects): create ${project.name} checklist page [skip ci]`,
+              actions,
+            },
+          });
+        }
+      } catch (error) {
+        if (!(error instanceof ApiError) || ![400, 409].includes(error.status)) throw error;
+      }
     } catch (error) {
       console.warn('project repo files', error);
     }
@@ -739,7 +908,6 @@
     if (!/^[a-z][a-z0-9_-]{0,39}$/.test(id)) {
       throw new Error('شناسه پروژه باید با حرف انگلیسی شروع شود و فقط حرف، عدد، - و _ داشته باشد.');
     }
-    // Reload latest map so concurrent tabs do not overwrite.
     projectsMap = loadProjectsMap();
     if (projectsMap[id]) throw new Error('این شناسه قبلاً ثبت شده است.');
     const project = {
@@ -753,7 +921,6 @@
     };
     projectsMap[id] = project;
     saveProjectsMap(projectsMap);
-    // Verify persistence
     projectsMap = loadProjectsMap();
     if (!projectsMap[id]) throw new Error('ذخیره پروژه در مرورگر انجام نشد.');
     if ($('admin-project-name')) $('admin-project-name').value = '';
@@ -793,7 +960,6 @@
     }
 
     bindAppEvents();
-    // Ensure project form is bound even if earlier listeners failed.
     const projectForm = $('admin-project-form');
     if (projectForm && projectForm.dataset.bound !== '1') {
       projectForm.dataset.bound = '1';
@@ -814,9 +980,15 @@
     $('http-notice').hidden = !(location.protocol === 'http:' || CONFIG.host.startsWith('http:'));
     if (token) {
       try {
-        const repo = await storage().ensureProject(token);
-        projectId = repo.id;
-        $('connection-state').textContent = currentUser.role === 'admin' ? 'توکن سرویس فعال است' : 'متصل';
+        if (window.AtlasStorage) {
+          const result = await AtlasStorage.ensureProject(token);
+          projectId = result.id;
+          $('connection-state').textContent = currentUser.role === 'admin' ? 'توکن سرویس فعال است' : 'متصل';
+        } else {
+          const project = await api(`/projects/${encodeURIComponent(CONFIG.project)}`);
+          projectId = project.id;
+          $('connection-state').textContent = currentUser.role === 'admin' ? 'توکن سرویس فعال است' : 'متصل';
+        }
       } catch {
         $('connection-state').textContent = 'اتصال برقرار نشد';
       }
@@ -837,8 +1009,7 @@
     } else $('calendar-notice').hidden = false;
   }
 
-  document.addEventListener('atlas-auth-ready'
-, event => {
+  document.addEventListener('atlas-auth-ready', event => {
     startApp(event.detail || {});
   });
 })();

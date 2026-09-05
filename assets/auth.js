@@ -1,8 +1,13 @@
-/* Auth gate: username/password, first-admin bootstrap, forced password change, admin user management. */
+// auth.js
+/* Auth gate: username/password, first-admin bootstrap, forced password change, admin user management.
+   Uses AtlasStorage for dual GitHub/GitLab backend support. */
 (() => {
   'use strict';
 
   const AUTH_CONFIG = Object.freeze({
+    host: 'http://gitlab.faraabin.ir',
+    project: 'fb_git_amirmahdi/checklist',
+    branch: 'main',
     usersPath: 'auth/users.json',
     servicePath: 'auth/service.json',
     sessionKey: 'atlas_f70_auth_session_v1',
@@ -10,11 +15,6 @@
     localUsersKey: 'atlas_f70_users_local_v1',
     pbkdf2Iterations: 120000,
   });
-
-  function storage() {
-    if (!window.AtlasStorage) throw new Error('ماژول ذخیره‌سازی بارگذاری نشده است.');
-    return window.AtlasStorage;
-  }
 
   const SPECIAL_CHARS = '!@#$%^&*_+';
   const SPECIAL_CHARS_HINT = '(!@#$%^&*_+...)';
@@ -29,6 +29,13 @@
   let usersSha = null;
   let serviceSha = null;
   let busy = false;
+
+  class ApiError extends Error {
+    constructor(status) {
+      super(`GitLab HTTP ${status}`);
+      this.status = status;
+    }
+  }
 
   function showAuthMessage(text, kind = 'info') {
     const el = $('auth-message');
@@ -47,16 +54,16 @@
   }
 
   function setBusy(state) {
-    busy = !!state;
-    document.querySelectorAll('#auth-gate button, #auth-gate input, #auth-gate select').forEach(el => {
-      el.disabled = !!state;
+    busy = state;
+    document.querySelectorAll('#auth-gate button, #auth-gate input').forEach(el => {
+      el.disabled = state;
     });
   }
 
   function setAdminBusy(state) {
-    busy = !!state;
+    busy = state;
     document.querySelectorAll('#admin-panel button, #admin-panel input, #admin-panel select').forEach(el => {
-      el.disabled = !!state;
+      el.disabled = state;
     });
   }
 
@@ -84,33 +91,50 @@
     return username;
   }
 
-  function explain(error) {
+  async function api(path, options = {}) {
+    if (window.AtlasStorage) {
+      return AtlasStorage.api(path, options);
+    }
+    // Fallback to old GitLab-only implementation
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 25000);
     try {
-      if (window.AtlasStorage) return storage().explain(error);
-    } catch { /* ignore */ }
-    return (error && error.message) || String(error || 'خطای ناشناخته');
+      const response = await fetch(`${AUTH_CONFIG.host}/api/v4${path}`, {
+        method: options.method || 'GET',
+        credentials: 'omit',
+        cache: 'no-store',
+        redirect: 'error',
+        signal: controller.signal,
+        headers: {
+          ...(serviceToken ? { 'PRIVATE-TOKEN': serviceToken } : {}),
+          ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+        },
+        ...(options.body ? { body: JSON.stringify(options.body) } : {}),
+      });
+      if (!response.ok) throw new ApiError(response.status);
+      if (response.status === 204) return null;
+      return await response.json();
+    } catch (error) {
+      if (error instanceof ApiError) throw error;
+      throw new Error('پاسخ معتبر از گیت‌لب دریافت نشد. اتصال شبکه، DNS و CORS را بررسی کنید.');
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
-  function isApiError(error) {
-    return !!(error && typeof error.status === 'number');
-  }
-
-  async function ensureProjectId() {
-    if (projectId) return projectId;
-    const info = await storage().ensureProject(serviceToken);
-    projectId = info.id;
-    return projectId;
-  }
-
-  async function readRepoFile(path) {
-    const file = await storage().readFile(path, serviceToken);
-    if (!file) return null;
-    return { text: file.text, lastCommitId: file.sha };
-  }
-
-  async function writeRepoFile(path, content, commitMessage, lastCommitId) {
-    const result = await storage().writeFile(path, content, commitMessage, lastCommitId, serviceToken);
-    return { text: content, lastCommitId: result.sha };
+  function explain(error) {
+    if (window.AtlasStorage && error instanceof AtlasStorage.ApiError) {
+      return AtlasStorage.explain(error);
+    }
+    if (!(error instanceof ApiError)) return error.message;
+    const map = {
+      400: 'درخواست نامعتبر بود. دوباره تلاش کنید.',
+      401: 'توکن سرویس نامعتبر یا منقضی است.',
+      403: 'اجازهٔ دسترسی به مخزن وجود ندارد.',
+      404: 'پروژه یا فایل پیدا نشد.',
+      409: 'فایل هم‌زمان تغییر کرده است. صفحه را تازه کنید.',
+    };
+    return map[error.status] || `گیت‌لب خطای ${error.status} برگرداند.`;
   }
 
   function bufferToBase64(buffer) {
@@ -159,6 +183,90 @@
     return result.hash === user.passwordHash;
   }
 
+  function getProvider() {
+    return window.AtlasStorage ? AtlasStorage.provider() : { id: 'gitlab', ...AUTH_CONFIG };
+  }
+
+  function getProviderId() {
+    return window.AtlasStorage ? AtlasStorage.getProviderId() : 'gitlab';
+  }
+
+  function setProviderId(providerId) {
+    if (window.AtlasStorage) {
+      AtlasStorage.setProviderId(providerId);
+      projectId = null;
+      return true;
+    }
+    return false;
+  }
+
+  async function ensureProjectId() {
+    if (projectId) return projectId;
+    if (window.AtlasStorage) {
+      const result = await AtlasStorage.ensureProject(serviceToken);
+      projectId = result.id;
+      return projectId;
+    }
+    const project = await api(`/projects/${encodeURIComponent(AUTH_CONFIG.project)}`);
+    projectId = project.id;
+    return projectId;
+  }
+
+  function projectApi() {
+    if (window.AtlasStorage) {
+      const p = AtlasStorage.provider();
+      if (p.id === 'github') return `/repos/${p.owner}/${p.repo}`;
+      return `/projects/${encodeURIComponent(projectId || p.project)}`;
+    }
+    return `/projects/${encodeURIComponent(projectId || AUTH_CONFIG.project)}`;
+  }
+
+  async function readRepoFile(path) {
+    if (window.AtlasStorage) {
+      const file = await AtlasStorage.readFile(path, serviceToken);
+      if (!file) return null;
+      return { text: file.text, lastCommitId: file.sha };
+    }
+    try {
+      const file = await api(
+        `${projectApi()}/repository/files/${encodeURIComponent(path)}?ref=${encodeURIComponent(AUTH_CONFIG.branch)}`
+      );
+      if (!file || typeof file.content !== 'string') return null;
+      const bytes = Uint8Array.from(atob(file.content.replace(/\s/g, '')), c => c.charCodeAt(0));
+      const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+      return {
+        text,
+        lastCommitId: file.last_commit_id || null,
+      };
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 404) return null;
+      throw error;
+    }
+  }
+
+  async function writeRepoFile(path, content, commitMessage, lastCommitId) {
+    if (window.AtlasStorage) {
+      const result = await AtlasStorage.writeFile(path, content, commitMessage, lastCommitId, serviceToken);
+      return result;
+    }
+    await ensureProjectId();
+    const action = lastCommitId ? 'update' : 'create';
+    const body = {
+      branch: AUTH_CONFIG.branch,
+      commit_message: `${commitMessage} [skip ci]`,
+      actions: [
+        {
+          action,
+          file_path: path,
+          content,
+          encoding: 'text',
+          ...(lastCommitId ? { last_commit_id: lastCommitId } : {}),
+        },
+      ],
+    };
+    return api(`${projectApi()}/repository/commits`, { method: 'POST', body });
+  }
+
   function emptyUsersDoc() {
     return { schemaVersion: 1, users: [] };
   }
@@ -180,40 +288,36 @@
   }
 
   async function loadUsers() {
-    // Always start from local so login works offline / without working remote token.
-    const local = loadUsersLocal();
-    usersDoc = local;
-    usersSha = null;
-
     if (!serviceToken) {
+      usersDoc = loadUsersLocal();
+      usersSha = null;
       return usersDoc;
     }
-
     try {
       await ensureProjectId();
       const file = await readRepoFile(AUTH_CONFIG.usersPath);
       if (!file) {
-        // Remote empty: keep local users (important after first setup before first sync)
+        const local = loadUsersLocal();
+        usersDoc = local.users.length ? local : emptyUsersDoc();
+        usersSha = null;
         return usersDoc;
       }
       const parsed = JSON.parse(file.text);
       if (parsed.schemaVersion !== 1 || !Array.isArray(parsed.users)) {
-        console.warn('remote users.json invalid; using local');
-        return usersDoc;
+        throw new Error('فایل کاربران معتبر نیست.');
       }
-      // Prefer remote if it has users; otherwise keep local
-      if (parsed.users.length) {
-        usersDoc = parsed;
-        usersSha = file.lastCommitId;
-        saveUsersLocal();
-      }
+      usersDoc = parsed;
+      usersSha = file.lastCommitId;
+      saveUsersLocal();
       return usersDoc;
     } catch (error) {
-      // Remote failure must never block login
-      console.warn('loadUsers remote failed', error);
-      usersDoc = loadUsersLocal();
-      usersSha = null;
-      return usersDoc;
+      const local = loadUsersLocal();
+      if (local.users.length) {
+        usersDoc = local;
+        usersSha = null;
+        return usersDoc;
+      }
+      throw error;
     }
   }
 
@@ -222,7 +326,8 @@
     if (!serviceToken) return;
     try {
       const content = `${JSON.stringify(usersDoc, null, 2)}\n`;
-      const fresh = await writeRepoFile(AUTH_CONFIG.usersPath, content, message, usersSha);
+      await writeRepoFile(AUTH_CONFIG.usersPath, content, message, usersSha);
+      const fresh = await readRepoFile(AUTH_CONFIG.usersPath);
       usersSha = fresh ? fresh.lastCommitId : null;
     } catch {
       // Keep local copy; sync when token/network is available.
@@ -248,7 +353,6 @@
     serviceSha = fresh ? fresh.lastCommitId : null;
     serviceToken = token;
     sessionStorage.setItem(AUTH_CONFIG.tokenKey, token);
-    if (window.AtlasStorage) storage().setToken(token);
   }
 
   function persistSession(user) {
@@ -302,10 +406,18 @@
     const value = (candidate || serviceToken || '').trim();
     if (!value) throw new Error('توکن سرویس را وارد کنید.');
     serviceToken = value;
-    storage().setToken(value);
     sessionStorage.setItem(AUTH_CONFIG.tokenKey, value);
     projectId = null;
     await ensureProjectId();
+    const p = getProvider();
+    if (p.id === 'gitlab') {
+      const branch = await api(
+        `/projects/${encodeURIComponent(p.project || AUTH_CONFIG.project)}/repository/branches/${encodeURIComponent(p.branch || AUTH_CONFIG.branch)}`,
+        { token: value }
+      );
+      if (branch.can_push === false) throw new ApiError(403);
+    }
+    // For GitHub, we rely on repo access (ensureProject succeeded).
     return value;
   }
 
@@ -437,18 +549,15 @@
     return true;
   }
 
-  async function updateServiceTokenFromAdmin(tokenValue, providerId) {
+  async function updateServiceTokenFromAdmin(tokenValue) {
     requireAdmin();
     const value = String(tokenValue || '').trim();
     if (!value) throw new Error('توکن سرویس را وارد کنید.');
-    if (providerId) storage().setProviderId(providerId);
     await requireServiceToken(value);
     await saveServiceToken(value);
+    // Sync local users to provider once token becomes available.
     await loadUsers();
     await saveUsers('chore(auth): sync users after service token set');
-    document.dispatchEvent(new CustomEvent('atlas-service-token-updated', {
-      detail: { token: value, provider: storage().getProviderId() },
-    }));
     return true;
   }
 
@@ -476,6 +585,7 @@
         user.active ? 'فعال' : 'غیرفعال',
         user.mustChangePassword ? 'نیاز به تغییر رمز' : 'رمز تأییدشده',
       ].join(' · ');
+
       main.append(title, meta);
 
       const actions = document.createElement('div');
@@ -593,12 +703,34 @@
     $('admin-token-form')?.addEventListener('submit', event => {
       event.preventDefault();
       withAdminBusy(async () => {
-        const providerId = $('admin-service-provider')?.value || storage().getProviderId();
         const value = $('admin-service-token').value.trim();
-        await updateServiceTokenFromAdmin(value, providerId);
+        await updateServiceTokenFromAdmin(value);
         $('admin-service-token').value = '';
-        const label = storage().provider().label;
-        showAdminMessage(`سرویس ${label} و توکن ذخیره شد. اعضا بدون دیدن توکن از آن استفاده می‌کنند.`, 'success');
+        showAdminMessage('توکن سرویس ذخیره شد. اعضا بدون دیدن توکن از آن استفاده می‌کنند.', 'success');
+        document.dispatchEvent(new CustomEvent('atlas-service-token-updated', { detail: { token: serviceToken } }));
+      });
+    });
+
+    // Provider selection
+    $('admin-provider-save')?.addEventListener('click', () => {
+      withAdminBusy(async () => {
+        const providerId = $('admin-provider').value;
+        if (providerId === getProviderId()) {
+          showAdminMessage('این سرویس قبلاً فعال است.', 'info');
+          return;
+        }
+        // Save provider
+        setProviderId(providerId);
+        projectId = null;
+        usersDoc = null;
+        usersSha = null;
+        serviceSha = null;
+        // Reset service token from session and reload users from new provider
+        serviceToken = '';
+        sessionStorage.removeItem(AUTH_CONFIG.tokenKey);
+        showAdminMessage('سرویس ذخیره‌سازی تغییر کرد. حالا توکن سرویس جدید را وارد کنید.', 'info');
+        // Re-render provider dropdown
+        $('admin-provider').value = getProviderId();
       });
     });
   }
@@ -610,11 +742,11 @@
     }
     if ($('admin-panel')) $('admin-panel').hidden = false;
     bindAdminPanel();
-    if ($('admin-service-provider')) $('admin-service-provider').value = storage().getProviderId();
-    if ($('service-provider')) $('service-provider').value = storage().getProviderId();
+    // Initialize provider dropdown
+    if ($('admin-provider')) $('admin-provider').value = getProviderId();
     await withAdminBusy(async () => {
       await refreshAdminPanel();
-      showAdminMessage(`پنل مدیریت آماده است · سرویس فعال: ${storage().provider().label}`, 'success');
+      showAdminMessage('پنل مدیریت آماده است.', 'success');
     });
   }
 
@@ -670,10 +802,9 @@
 
     if (!password) throw new Error('رمز عبور را وارد کنید.');
 
-    // Local-first auth so GitHub/GitLab outage never blocks login
     await loadUsers();
 
-    if (!usersDoc || !Array.isArray(usersDoc.users) || !usersDoc.users.length) {
+    if (!usersDoc.users.length) {
       showPanel('setup');
       showAuthMessage('هنوز ادمینی تعریف نشده است. ادمین اول را بسازید. توکن فعلاً لازم نیست.', 'info');
       return;
@@ -685,14 +816,12 @@
     const ok = await verifyPassword(password, user);
     if (!ok) throw new Error('نام کاربری یا رمز عبور نادرست است.');
 
-    // Optional remote token refresh; ignore failures
     if (serviceToken) {
       try {
         const repoToken = await loadServiceTokenFromRepo();
         if (repoToken) {
           serviceToken = repoToken;
           sessionStorage.setItem(AUTH_CONFIG.tokenKey, repoToken);
-          if (window.AtlasStorage) storage().setToken(repoToken);
         }
       } catch {
         /* keep current token */
@@ -700,7 +829,7 @@
     }
 
     persistSession(user);
-    if ($('login-password')) $('login-password').value = '';
+    $('login-password').value = '';
 
     if (user.mustChangePassword) {
       showPanel('change');
@@ -712,8 +841,6 @@
   }
 
   async function saveServiceTokenFromGate() {
-    const providerSelect = $('service-provider');
-    if (providerSelect) storage().setProviderId(providerSelect.value);
     const value = $('service-token-input').value.trim();
     if (!value) throw new Error('توکن سرویس را وارد کنید.');
     await requireServiceToken(value);
@@ -774,7 +901,6 @@
     try {
       await action();
     } catch (error) {
-      console.error(error);
       showAuthMessage(explain(error), 'error');
     } finally {
       setBusy(false);
@@ -788,30 +914,18 @@
   }
 
   async function boot() {
-    // Always unlock controls first (previous broken builds could leave disabled=true)
-    try { setBusy(false); } catch { /* ignore */ }
-    busy = false;
-
     session = readSession();
-    serviceToken = sessionStorage.getItem(AUTH_CONFIG.tokenKey) || (window.AtlasStorage && window.AtlasStorage.getToken()) || '';
-    try {
-      if ($('service-provider') && window.AtlasStorage) $('service-provider').value = storage().getProviderId();
-      if ($('admin-service-provider') && window.AtlasStorage) $('admin-service-provider').value = storage().getProviderId();
-    } catch { /* ignore */ }
+    serviceToken = sessionStorage.getItem(AUTH_CONFIG.tokenKey) || '';
 
-    // Always show token button; setup button stays available if no local users yet
-    if ($('auth-goto-service')) $('auth-goto-service').hidden = false;
-    if ($('auth-goto-setup')) $('auth-goto-setup').hidden = false;
-
-    if ($('auth-login-form')) $('auth-login-form').addEventListener('submit', event => {
+    $('auth-login-form').addEventListener('submit', event => {
       event.preventDefault();
       withBusy(login);
     });
-    $('auth-setup-form')?.addEventListener('submit', event => {
+    $('auth-setup-form').addEventListener('submit', event => {
       event.preventDefault();
       withBusy(bootstrapAdmin);
     });
-    $('auth-change-form')?.addEventListener('submit', event => {
+    $('auth-change-form').addEventListener('submit', event => {
       event.preventDefault();
       withBusy(changePassword);
     });
@@ -825,7 +939,7 @@
       event.preventDefault();
       withBusy(saveServiceTokenFromGate);
     });
-    $('auth-goto-setup')?.addEventListener('click', () => {
+    $('auth-goto-setup').addEventListener('click', () => {
       showPanel('setup');
       showAuthMessage('اولین حساب را بسازید. بعد از آن کاربران را از پنل مدیریت اضافه کنید.', 'info');
     });
@@ -837,21 +951,16 @@
       showPanel('login');
       showAuthMessage('');
     });
-    $('auth-goto-login')?.addEventListener('click', () => {
+    $('auth-goto-login').addEventListener('click', () => {
       showPanel('login');
       showAuthMessage('');
     });
 
     try {
       if (serviceToken) {
-        try { await requireServiceToken(serviceToken); } catch (e) { console.warn('token check', e); }
+        try { await requireServiceToken(serviceToken); } catch { /* keep local mode */ }
       }
-      try {
-        await loadUsers();
-      } catch (e) {
-        console.warn('boot loadUsers', e);
-        usersDoc = loadUsersLocal();
-      }
+      await loadUsers();
       updateSetupVisibility();
 
       if (!usersDoc.users.length) {
@@ -887,12 +996,8 @@
         'info'
       );
     } catch (error) {
-      console.error(error);
       showPanel('login');
       showAuthMessage(explain(error), 'error');
-    } finally {
-      try { setBusy(false); } catch { /* ignore */ }
-      busy = false;
     }
   }
 
@@ -921,11 +1026,9 @@
     deleteUser,
     updateServiceTokenFromAdmin,
     openPasswordChange,
+    getProviderId,
+    setProviderId,
   };
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', boot);
-  } else {
-    boot();
-  }
+  document.addEventListener('DOMContentLoaded', boot);
 })();

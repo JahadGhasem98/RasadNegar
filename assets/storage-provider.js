@@ -1,3 +1,4 @@
+// storage-provider.js
 /* Dual backend: GitHub + GitLab service storage */
 (() => {
   'use strict';
@@ -36,11 +37,11 @@
 
   function getProviderId() {
     const saved = sessionStorage.getItem(PROVIDER_KEY) || localStorage.getItem(PROVIDER_KEY);
-    return saved === 'gitlab' ? 'gitlab' : 'github';
+    return saved === 'github' ? 'github' : 'gitlab';
   }
 
   function setProviderId(id) {
-    const next = id === 'gitlab' ? 'gitlab' : 'github';
+    const next = id === 'github' ? 'github' : 'gitlab';
     sessionStorage.setItem(PROVIDER_KEY, next);
     localStorage.setItem(PROVIDER_KEY, next);
     return next;
