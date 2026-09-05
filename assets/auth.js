@@ -223,6 +223,72 @@
     return readRepoFile(path);
   }
 
+  function emptyUsersDoc() {
+    return { schemaVersion: 1, users: [] };
+  }
+
+  function loadUsersLocal() {
+    try {
+      const raw = localStorage.getItem(AUTH_CONFIG.localUsersKey);
+      if (!raw) return emptyUsersDoc();
+      const parsed = JSON.parse(raw);
+      if (parsed.schemaVersion !== 1 || !Array.isArray(parsed.users)) return emptyUsersDoc();
+      return parsed;
+    } catch {
+      return emptyUsersDoc();
+    }
+  }
+
+  function saveUsersLocal() {
+    localStorage.setItem(AUTH_CONFIG.localUsersKey, JSON.stringify(usersDoc));
+  }
+
+  async function loadUsers() {
+    if (!serviceToken) {
+      usersDoc = loadUsersLocal();
+      usersSha = null;
+      return usersDoc;
+    }
+    try {
+      await ensureProjectId();
+      const file = await readRepoFile(AUTH_CONFIG.usersPath);
+      if (!file) {
+        const local = loadUsersLocal();
+        usersDoc = local.users.length ? local : emptyUsersDoc();
+        usersSha = null;
+        return usersDoc;
+      }
+      const parsed = JSON.parse(file.text);
+      if (parsed.schemaVersion !== 1 || !Array.isArray(parsed.users)) {
+        throw new Error('فایل کاربران معتبر نیست.');
+      }
+      usersDoc = parsed;
+      usersSha = file.lastCommitId;
+      saveUsersLocal();
+      return usersDoc;
+    } catch (error) {
+      const local = loadUsersLocal();
+      if (local.users.length) {
+        usersDoc = local;
+        usersSha = null;
+        return usersDoc;
+      }
+      throw error;
+    }
+  }
+
+  async function saveUsers(message) {
+    saveUsersLocal();
+    if (!serviceToken) return;
+    try {
+      const content = `${JSON.stringify(usersDoc, null, 2)}\n`;
+      const fresh = await writeRepoFile(AUTH_CONFIG.usersPath, content, message, usersSha);
+      usersSha = fresh ? fresh.lastCommitId : null;
+    } catch {
+      // Keep local copy; sync when token/network is available.
+    }
+  }
+
   async function loadServiceTokenFromRepo() {
     await ensureProjectId();
     const file = await readRepoFile(AUTH_CONFIG.servicePath);
